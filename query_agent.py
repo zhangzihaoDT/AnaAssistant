@@ -61,11 +61,15 @@ def run_query_agent(user_query: str) -> str:
                 "3. 构造 BI DSL 计划，调用 `perform_analysis` 工具。\n"
                 "4. 必须使用工具，不要直接回答。\n\n"
                 
+                "### 高级技巧\n"
+                "- **处理复杂过滤**: 当用户需要“包含 A 或 包含 B”的逻辑时，请使用 `matches` 操作符配合正则（如 `A|B`）。不要使用多个 `contains`（那是 AND 关系）。\n"
+                "- **细分统计**: 如果用户询问特定属性（如“52度电”），请确保 `matches` 或 `contains` 的值足够精确。\n\n"
+                
                 "### DSL 构造指南\n"
                 "- `dataset`: 选择最相关的数据集。\n"
                 "- `metrics`: 定义要计算的指标，如 `{'field': 'sales', 'agg': 'sum'}`。\n"
                 "- `dimensions`: 定义分组维度。\n"
-                "- `filters`: 定义过滤条件。\n"
+                "- `filters`: 定义过滤条件。支持操作符: `==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `contains`, `not contains`, `matches`, `not matches`。\n"
                 "- `sort` & `limit`: 定义排序和限制。\n"
             ),
         },
