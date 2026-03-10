@@ -5,9 +5,9 @@ from openai import OpenAI
 from tools import get_current_time, TIME_TOOL_SCHEMA, CodeInterpreterTool, CODE_INTERPRETER_SCHEMA
 
 # 1. 加载环境变量 (Load Environment Variables)
-# 这一步是为了获取DeepSeek API Key
+# 这一步是为了获取DEEPSEEK_API_KEY API Key
 load_dotenv()
-api_key = os.getenv("deepseek")
+api_key = os.getenv("DEEPSEEK_API_KEY")
 e2b_api_key = os.getenv("E2B_API_KEY") or os.getenv("E2B_development")
 
 if not api_key:
@@ -15,7 +15,7 @@ if not api_key:
     try:
         with open(".env", "r") as f:
             for line in f:
-                if line.startswith("deepseek="):
+                if line.startswith("DEEPSEEK_API_KEY="):
                     api_key = line.strip().split("=")[1]
                 if line.startswith("E2B_API_KEY="):
                     e2b_api_key = line.strip().split("=")[1]

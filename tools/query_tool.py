@@ -144,6 +144,16 @@ class QueryTool:
                 df = df[df[field] <= value]
             elif op == "in" and isinstance(value, list):
                 df = df[df[field].isin(value)]
+            elif op == "contains":
+                # Ensure the column is treated as string for contains check
+                df = df[df[field].astype(str).str.contains(str(value), na=False, regex=False)]
+            elif op == "not contains":
+                df = df[~df[field].astype(str).str.contains(str(value), na=False, regex=False)]
+            elif op == "matches":
+                # Regex match
+                df = df[df[field].astype(str).str.contains(str(value), na=False, regex=True)]
+            elif op == "not matches":
+                df = df[~df[field].astype(str).str.contains(str(value), na=False, regex=True)]
 
         # 2. Grouping & Aggregation
         dimensions = plan.get("dimensions", [])
@@ -260,7 +270,7 @@ QUERY_TOOL_SCHEMA = {
                                 "type": "object",
                                 "properties": {
                                     "field": {"type": "string"},
-                                    "op": {"type": "string", "enum": ["==", "!=", ">", "<", ">=", "<=", "in"]},
+                                    "op": {"type": "string", "enum": ["==", "!=", ">", "<", ">=", "<=", "in", "contains", "not contains", "matches", "not matches"]},
                                     "value": {} 
                                 },
                                 "required": ["field", "op", "value"]

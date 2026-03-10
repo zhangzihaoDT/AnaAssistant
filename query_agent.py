@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import datetime
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -10,7 +11,7 @@ from tools import QUERY_TOOL_SCHEMA, QueryTool
 
 def _load_api_key() -> str | None:
     load_dotenv()
-    api_key = os.getenv("deepseek")
+    api_key = os.getenv("DEEPSEEK_API_KEY")
     if api_key:
         return api_key
     env_file = ".env"
@@ -18,7 +19,7 @@ def _load_api_key() -> str | None:
         return None
     with open(env_file, "r", encoding="utf-8") as file:
         for line in file:
-            if line.startswith("deepseek="):
+            if line.startswith("DEEPSEEK_API_KEY="):
                 return line.strip().split("=", 1)[1]
     return None
 
@@ -39,6 +40,7 @@ def run_query_agent(user_query: str) -> str:
     
     # 获取 schema 内容作为 prompt 的一部分
     schema_context = query_tool._schema_context()
+    current_date = datetime.date.today().isoformat()
     
     messages = [
         {
@@ -47,6 +49,8 @@ def run_query_agent(user_query: str) -> str:
                 "你是一个智能数据分析助手 (Planning Agent)。"
                 "你的核心职责是将用户的自然语言问题转化为结构化的 BI 分析计划 (DSL)。"
                 "你不需要编写 Python 代码，而是生成一个符合 `perform_analysis` 工具定义的 JSON 计划。\n\n"
+                
+                f"### 当前时间上下文\n- 今天是: {current_date}\n\n"
                 
                 "### 数据集与 Schema 信息\n"
                 f"{schema_context.get('schema_md', '')}\n\n"

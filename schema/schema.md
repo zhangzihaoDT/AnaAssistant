@@ -30,10 +30,10 @@
 
 ### 核心业务指标
 
-- **锁单量**: `order_number` 计数 (条件: `lock_time` 非空)
-- **交付数**: `order_number` 计数 (条件: `delivery_date` 非空)
-- **开票数**: `order_number` 计数 (条件: `invoice_upload_time` 非空)
-- **小订数**: `order_number` 计数 (条件: `intention_payment_time` 非空)
+- **锁单量**: `order_number` 计数 (必须添加过滤条件: `lock_time` 非空)。注意：时间筛选应基于 `lock_time`。
+- **交付数**: `order_number` 计数 (必须添加过滤条件: `delivery_date` 非空)。注意：时间筛选应基于 `delivery_date`。
+- **开票数**: `order_number` 计数 (必须添加过滤条件: `invoice_upload_time` 非空)。注意：时间筛选应基于 `invoice_upload_time`，而不是 `order_create_date`。
+- **小订数**: `order_number` 计数 (必须添加过滤条件: `intention_payment_time` 非空)。注意：时间筛选应基于 `intention_payment_time`。
 - **开票金额**: `invoice_amount` (求和/平均)
 - **订单计数**: `order_number` 计数
 
@@ -64,7 +64,10 @@
 - `series`: 车型系列 (如: L6, LS6)
 - `belong_intent_series`: 意向系列
 - `drive_series_cn`: 驱动系列中文名
-- `product_type`: 燃料类型 / 动力形式 (对应 query 中的 "燃料"、"动力"、"燃油")
+- `product_type`: 燃料类型 / 动力形式。**注意：数据集中无此字段，需通过 product_name 模糊匹配生成。**
+  - **增程**: `product_name` 包含 "52" 或 "66"。请使用正则匹配: `filters: [{"field": "product_name", "op": "matches", "value": "52|66"}]`。
+  - **纯电**: `product_name` **不**包含 "52" 且 **不**包含 "66"。请使用正则匹配: `filters: [{"field": "product_name", "op": "not matches", "value": "52|66"}]`。
+  - **Planning Agent 请注意**: 对于“增程”或“纯电”查询，必须使用 `matches` 或 `not matches` 操作符，并使用正则 `52|66`。不要生成多个 `contains` 过滤器（因为它们是 AND 关系）。
 
 ### 地理位置
 
