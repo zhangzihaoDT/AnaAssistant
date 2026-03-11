@@ -18,6 +18,8 @@
 - **Query Tool**：执行查询类 DSL（过滤、分组、聚合、排序等 OLAP 操作）。
 - **Comparison Tool**：执行派生指标类计算（同比/环比等），通过多个查询窗口对齐后计算差值与涨幅。
 - **Schema Aware**：感知数据集 Schema 和业务定义，准确识别指标和维度。
+- **多子问题拆解**：支持把一句话里多个子问题拆成多个 `plan` 并逐条执行。
+- **中文时间窗解析**：支持 `25年3月1日-3月10日`、`25年3月整月/全月` 等表达，并统一为开区间 `end`（`[start, end)`）。
 
 **工作流示例：**
 
@@ -26,11 +28,16 @@
    ↓
 Planning Agent: 生成规划 DSL
   {
-    "dataset": "order_full_data",
-    "metric": {"field": "order_number", "agg": "count", "alias": "锁单数"},
-    "time": {"field": "lock_time", "start": "2026-03-10", "end": "2026-03-11"},
-    "comparison": {"type": "wow"},
-    "filters": [{"field": "lock_time", "op": "!=", "value": null}]
+    "plans": [
+      {
+        "question": "昨天的锁单数周环比如何？",
+        "dataset": "order_full_data",
+        "metric": {"field": "order_number", "agg": "count", "alias": "锁单数"},
+        "time": {"field": "lock_time", "start": "2026-03-10", "end": "2026-03-11"},
+        "comparison": {"type": "wow"},
+        "filters": [{"field": "lock_time", "op": "!=", "value": null}]
+      }
+    ]
   }
    ↓
 Comparison Tool: 生成当前期/对比期执行计划并计算
@@ -47,10 +54,8 @@ Agent: "昨天锁单数为 X，相比上周同期变化 Y，周环比 Z%。"
 确保项目根目录下存在 `.env` 文件，并包含您的 DeepSeek API Key：
 
 ```env
-deepseek=sk-your-api-key-here
+DEEPSEEK_API_KEY=sk-your-api-key-here
 ```
-
-_(注意：本项目已适配读取 `/Users/zihao_/Documents/github/W2606*Tool_calls/.env`)*
 
 ### 2. 创建虚拟环境并安装依赖
 
@@ -82,11 +87,17 @@ python3 demo.py
 python3 query_agent.py "下发线索数 (门店) 的平均值是多少？"
 ```
 
+多子问题示例：
+
+```bash
+python3 query_agent.py "25年3月1日-3月10日锁单数多少？25年3月整月锁单数多少？"
+```
+
 ## 项目结构
 
 - `demo.py`: 基础工具调用演示入口。
 - `query_agent.py`: Agentic BI 查询助手入口。
-- `planning_agent.py`: PlanningAgent（规划 DSL 生成 + 意图解析与规范化）。
+- `planning_agent.py`: PlanningAgent（输出 `plans` 列表 + 意图解析与规范化）。
 - `tools/`: 工具库
   - `query_tool.py`: **核心** BI 查询工具，实现了 DSL 执行引擎。
   - `comparison_tool.py`: 派生指标工具（同比/环比），通过对齐两个时间窗口计算差值与涨幅。

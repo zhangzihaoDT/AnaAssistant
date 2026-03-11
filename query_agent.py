@@ -49,49 +49,61 @@ def run_query_agent(user_query: str) -> str:
     comparison_tool = ComparisonTool(query_tool=query_tool)
 
     print("\n[Thinking] PlanningAgent 正在构建规划 DSL...")
-    plan = planning_agent.create_plan(user_query)
+    plans = planning_agent.create_plans(user_query) or [planning_agent.create_plan(user_query)]
 
-    if not plan:
+    plans = [p for p in plans if isinstance(p, dict) and p]
+    if not plans:
         return "未能生成有效的规划 DSL。"
 
-    print(f"\n  ➡️  规划 DSL: {json.dumps(plan, ensure_ascii=False)}")
+    result_blocks: list[str] = []
+    for idx, plan in enumerate(plans):
+        print(f"\n  ➡️  规划 DSL[{idx+1}/{len(plans)}]: {json.dumps(plan, ensure_ascii=False)}")
 
-    dataset = plan.get("dataset")
-    metric = plan.get("metric", {}) or {}
-    time = plan.get("time", {}) or {}
-    dimensions = plan.get("dimensions", []) or []
-    filters = plan.get("filters", []) or []
-    comparison = plan.get("comparison", {}) or {}
+        dataset = plan.get("dataset")
+        metric = plan.get("metric", {}) or {}
+        time = plan.get("time", {}) or {}
+        dimensions = plan.get("dimensions", []) or []
+        filters = plan.get("filters", []) or []
+        comparison = plan.get("comparison", {}) or {}
 
-    time_field = time.get("field")
-    time_start = time.get("start")
-    time_end = time.get("end")
+        time_field = time.get("field")
+        time_start = time.get("start")
+        time_end = time.get("end")
 
-    if time_field and ("锁单" in (metric.get("business_name") or "") or time_field in {"lock_time", "delivery_date", "invoice_upload_time", "intention_payment_time"}):
-        has_non_null = any(
-            isinstance(f, dict) and f.get("field") == time_field and f.get("op") == "!=" and f.get("value") is None
-            for f in filters
-        )
-        if not has_non_null:
-            filters = [*filters, {"field": time_field, "op": "!=", "value": None}]
-
-    filters_without_time = []
-    for f in filters:
-        if not isinstance(f, dict):
-            continue
-        if f.get("field") != time_field:
+        filters_without_time = []
+        for f in filters:
+            if not isinstance(f, dict):
+                continue
+            if f.get("field") != time_field:
+                filters_without_time.append(f)
+                continue
+            if f.get("op") in {">=", "<"} and str(f.get("value")) in {str(time_start), str(time_end)}:
+                continue
             filters_without_time.append(f)
-            continue
-        if f.get("op") in {">=", "<"} and str(f.get("value")) in {str(time_start), str(time_end)}:
-            continue
-        filters_without_time.append(f)
 
-    comparison_type = comparison.get("type")
+        comparison_type = comparison.get("type")
 
-    if comparison_type in {"yoy", "wow"}:
-        print(f"\n[Thinking] 执行派生指标对比计算: {comparison_type}")
-        tool_result = comparison_tool.perform_comparison(
-            {
+        if comparison_type in {"yoy", "wow"}:
+            print(f"\n[Thinking] 执行派生指标对比计算: {comparison_type}")
+            tool_result = comparison_tool.perform_comparison(
+                {
+                    "dataset": dataset,
+                    "metrics": [
+                        {
+                            "field": metric.get("field"),
+                            "agg": metric.get("agg"),
+                            "alias": metric.get("alias") or metric.get("business_name") or "value",
+                        }
+                    ],
+                    "dimensions": dimensions,
+                    "filters": filters_without_time,
+                    "time": {"field": time_field, "start": time_start, "end": time_end},
+                    "comparison": {"type": comparison_type},
+                }
+            )
+        else:
+            print("\n[Thinking] 执行单次查询...")
+            query_plan = {
                 "dataset": dataset,
                 "metrics": [
                     {
@@ -101,37 +113,26 @@ def run_query_agent(user_query: str) -> str:
                     }
                 ],
                 "dimensions": dimensions,
-                "filters": filters_without_time,
-                "time": {"field": time_field, "start": time_start, "end": time_end},
-                "comparison": {"type": comparison_type},
+                "filters": [
+                    *filters_without_time,
+                    {"field": time_field, "op": ">=", "value": time_start},
+                    {"field": time_field, "op": "<", "value": time_end},
+                ]
+                if time_field and time_start and time_end
+                else filters_without_time,
             }
-        )
-    else:
-        print("\n[Thinking] 执行单次查询...")
-        query_plan = {
-            "dataset": dataset,
-            "metrics": [
-                {
-                    "field": metric.get("field"),
-                    "agg": metric.get("agg"),
-                    "alias": metric.get("alias") or metric.get("business_name") or "value",
-                }
-            ],
-            "dimensions": dimensions,
-            "filters": [
-                *filters_without_time,
-                {"field": time_field, "op": ">=", "value": time_start},
-                {"field": time_field, "op": "<", "value": time_end},
-            ]
-            if time_field and time_start and time_end
-            else filters_without_time,
-        }
-        tool_result = query_tool.execute_analysis(query_plan)
+            tool_result = query_tool.execute_analysis(query_plan)
 
-    if "找不到数据集" in tool_result or "聚合计算失败" in tool_result:
-        print(f"  ⚠️  执行异常，尝试回退到关键词匹配...")
-        fallback_result = query_tool.answer_question(user_query)
-        tool_result = f"执行遇到问题: {tool_result}\n\n尝试关键词匹配结果:\n{fallback_result}"
+        if "找不到数据集" in tool_result or "聚合计算失败" in tool_result:
+            print(f"  ⚠️  执行异常，尝试回退到关键词匹配...")
+            fallback_question = plan.get("question") or user_query
+            fallback_result = query_tool.answer_question(fallback_question)
+            tool_result = f"执行遇到问题: {tool_result}\n\n尝试关键词匹配结果:\n{fallback_result}"
+
+        sub_query = plan.get("question") or user_query
+        result_blocks.append(
+            f"子问题 {idx+1}: {sub_query}\n规划 DSL: {json.dumps(plan, ensure_ascii=False)}\n执行结果:\n{tool_result}"
+        )
 
     print("\n[Thinking] AnalysisAgent 正在生成最终回答...")
     messages = [
@@ -139,7 +140,7 @@ def run_query_agent(user_query: str) -> str:
             "role": "system",
             "content": "你是一个智能数据分析助手。请基于给定的规划 DSL 与执行结果，直接回答用户问题，语言简洁，给出关键数值与同比/环比方向与幅度。",
         },
-        {"role": "user", "content": f"用户问题: {user_query}\n规划 DSL: {json.dumps(plan, ensure_ascii=False)}\n执行结果:\n{tool_result}"},
+        {"role": "user", "content": f"用户问题: {user_query}\n\n{'\n\n---\n\n'.join(result_blocks)}"},
     ]
 
     final_response = client.chat.completions.create(model="deepseek-chat", messages=messages)
