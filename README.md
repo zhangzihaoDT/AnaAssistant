@@ -12,29 +12,32 @@
 
 ### 2. Agentic BI 数据查询 (`query_agent.py`)
 
-这是一个基于 **NL → BI DSL → Execution** 架构的智能数据分析 Agent。
+这是一个基于 **NL → Planning DSL → Execution DSL → Execution** 架构的智能数据分析 Agent。
 
-- **Planning Agent**：将自然语言问题转化为结构化的 BI 分析计划 (DSL)。
-- **Query Tool**：执行 BI DSL 计划，支持过滤、分组、聚合、排序等 OLAP 操作。
+- **Planning Agent**：将自然语言问题转化为结构化的规划 DSL（时间范围、对比类型、拆解维度、过滤口径）。
+- **Query Tool**：执行查询类 DSL（过滤、分组、聚合、排序等 OLAP 操作）。
+- **Comparison Tool**：执行派生指标类计算（同比/环比等），通过多个查询窗口对齐后计算差值与涨幅。
 - **Schema Aware**：感知数据集 Schema 和业务定义，准确识别指标和维度。
 
 **工作流示例：**
 
 ```
-用户提问: "2026年3月到目前为止锁单总数是多少？"
+用户提问: "昨天的锁单数周环比如何？"
    ↓
-Planning Agent: 生成 DSL
-   {
-     "dataset": "order_full_data",
-     "metrics": [{"field": "lock_time", "agg": "count"}],
-     "filters": [{"field": "lock_time", "op": ">=", "value": "2026-03-01"}]
-   }
+Planning Agent: 生成规划 DSL
+  {
+    "dataset": "order_full_data",
+    "metric": {"field": "order_number", "agg": "count", "alias": "锁单数"},
+    "time": {"field": "lock_time", "start": "2026-03-10", "end": "2026-03-11"},
+    "comparison": {"type": "wow"},
+    "filters": [{"field": "lock_time", "op": "!=", "value": null}]
+  }
    ↓
-Query Tool: 执行 DSL (Pandas Aggregation)
+Comparison Tool: 生成当前期/对比期执行计划并计算
    ↓
-Result: 1664
+Result: {锁单数_current, 锁单数_compare, 锁单数_diff, 锁单数_diff_pct}
    ↓
-Agent: "2026年3月到目前为止的锁单总数为 1,664单。"
+Agent: "昨天锁单数为 X，相比上周同期变化 Y，周环比 Z%。"
 ```
 
 ## 环境准备
@@ -83,8 +86,10 @@ python3 query_agent.py "下发线索数 (门店) 的平均值是多少？"
 
 - `demo.py`: 基础工具调用演示入口。
 - `query_agent.py`: Agentic BI 查询助手入口。
+- `planning_agent.py`: PlanningAgent（规划 DSL 生成 + 意图解析与规范化）。
 - `tools/`: 工具库
   - `query_tool.py`: **核心** BI 查询工具，实现了 DSL 执行引擎。
+  - `comparison_tool.py`: 派生指标工具（同比/环比），通过对齐两个时间窗口计算差值与涨幅。
   - `time_tool.py`: 时间查询工具。
   - `code_interpreter.py`: 代码解释器工具。
 - `schema/`: 数据集定义

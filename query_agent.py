@@ -6,7 +6,8 @@ import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from tools import QUERY_TOOL_SCHEMA, QueryTool
+from planning_agent import PlanningAgent
+from tools import QueryTool, ComparisonTool
 
 
 def _load_api_key() -> str | None:
@@ -38,136 +39,110 @@ def run_query_agent(user_query: str) -> str:
         schema_dir="/Users/zihao_/Documents/github/26W06_Tool_calls/schema",
     )
     
-    # 获取 schema 内容作为 prompt 的一部分
     schema_context = query_tool._schema_context()
-    current_date = datetime.date.today().isoformat()
-    
+
+    planning_agent = PlanningAgent(
+        client=client,
+        schema_md=schema_context.get("schema_md", ""),
+        business_definition=schema_context.get("business_definition", ""),
+    )
+    comparison_tool = ComparisonTool(query_tool=query_tool)
+
+    print("\n[Thinking] PlanningAgent 正在构建规划 DSL...")
+    plan = planning_agent.create_plan(user_query)
+
+    if not plan:
+        return "未能生成有效的规划 DSL。"
+
+    print(f"\n  ➡️  规划 DSL: {json.dumps(plan, ensure_ascii=False)}")
+
+    dataset = plan.get("dataset")
+    metric = plan.get("metric", {}) or {}
+    time = plan.get("time", {}) or {}
+    dimensions = plan.get("dimensions", []) or []
+    filters = plan.get("filters", []) or []
+    comparison = plan.get("comparison", {}) or {}
+
+    time_field = time.get("field")
+    time_start = time.get("start")
+    time_end = time.get("end")
+
+    if time_field and ("锁单" in (metric.get("business_name") or "") or time_field in {"lock_time", "delivery_date", "invoice_upload_time", "intention_payment_time"}):
+        has_non_null = any(
+            isinstance(f, dict) and f.get("field") == time_field and f.get("op") == "!=" and f.get("value") is None
+            for f in filters
+        )
+        if not has_non_null:
+            filters = [*filters, {"field": time_field, "op": "!=", "value": None}]
+
+    filters_without_time = []
+    for f in filters:
+        if not isinstance(f, dict):
+            continue
+        if f.get("field") != time_field:
+            filters_without_time.append(f)
+            continue
+        if f.get("op") in {">=", "<"} and str(f.get("value")) in {str(time_start), str(time_end)}:
+            continue
+        filters_without_time.append(f)
+
+    comparison_type = comparison.get("type")
+
+    if comparison_type in {"yoy", "wow"}:
+        print(f"\n[Thinking] 执行派生指标对比计算: {comparison_type}")
+        tool_result = comparison_tool.perform_comparison(
+            {
+                "dataset": dataset,
+                "metrics": [
+                    {
+                        "field": metric.get("field"),
+                        "agg": metric.get("agg"),
+                        "alias": metric.get("alias") or metric.get("business_name") or "value",
+                    }
+                ],
+                "dimensions": dimensions,
+                "filters": filters_without_time,
+                "time": {"field": time_field, "start": time_start, "end": time_end},
+                "comparison": {"type": comparison_type},
+            }
+        )
+    else:
+        print("\n[Thinking] 执行单次查询...")
+        query_plan = {
+            "dataset": dataset,
+            "metrics": [
+                {
+                    "field": metric.get("field"),
+                    "agg": metric.get("agg"),
+                    "alias": metric.get("alias") or metric.get("business_name") or "value",
+                }
+            ],
+            "dimensions": dimensions,
+            "filters": [
+                *filters_without_time,
+                {"field": time_field, "op": ">=", "value": time_start},
+                {"field": time_field, "op": "<", "value": time_end},
+            ]
+            if time_field and time_start and time_end
+            else filters_without_time,
+        }
+        tool_result = query_tool.execute_analysis(query_plan)
+
+    if "找不到数据集" in tool_result or "聚合计算失败" in tool_result:
+        print(f"  ⚠️  执行异常，尝试回退到关键词匹配...")
+        fallback_result = query_tool.answer_question(user_query)
+        tool_result = f"执行遇到问题: {tool_result}\n\n尝试关键词匹配结果:\n{fallback_result}"
+
+    print("\n[Thinking] AnalysisAgent 正在生成最终回答...")
     messages = [
         {
             "role": "system",
-            "content": (
-                "你是一个智能数据分析助手 (Planning Agent)。"
-                "你的核心职责是将用户的自然语言问题转化为结构化的 BI 分析计划 (DSL)。"
-                "你不需要编写 Python 代码，而是生成一个符合 `perform_analysis` 工具定义的 JSON 计划。\n\n"
-                
-                f"### 当前时间上下文\n- 今天是: {current_date}\n\n"
-                
-                "### 数据集与 Schema 信息\n"
-                f"{schema_context.get('schema_md', '')}\n\n"
-                
-                "### 任务流程\n"
-                "1. 理解用户问题，识别分析目标 (Metric) 和维度 (Dimension)。\n"
-                "2. 根据 Schema 映射到正确的数据集 (assign_data 或 order_full_data) 和字段名。\n"
-                "3. 构造 BI DSL 计划，调用 `perform_analysis` 工具。\n"
-                "4. 必须使用工具，不要直接回答。\n\n"
-                
-                "### 高级技巧\n"
-                "- **处理复杂过滤**: 当用户需要“包含 A 或 包含 B”的逻辑时，请使用 `matches` 操作符配合正则（如 `A|B`）。不要使用多个 `contains`（那是 AND 关系）。\n"
-                "- **细分统计**: 如果用户询问特定属性（如“52度电”），请确保 `matches` 或 `contains` 的值足够精确。\n\n"
-                
-                "### DSL 构造指南\n"
-                "- `dataset`: 选择最相关的数据集。\n"
-                "- `metrics`: 定义要计算的指标，如 `{'field': 'sales', 'agg': 'sum'}`。\n"
-                "- `dimensions`: 定义分组维度。\n"
-                "- `filters`: 定义过滤条件。支持操作符: `==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `contains`, `not contains`, `matches`, `not matches`。\n"
-                "- `sort` & `limit`: 定义排序和限制。\n"
-            ),
+            "content": "你是一个智能数据分析助手。请基于给定的规划 DSL 与执行结果，直接回答用户问题，语言简洁，给出关键数值与同比/环比方向与幅度。",
         },
-        {"role": "user", "content": user_query},
+        {"role": "user", "content": f"用户问题: {user_query}\n规划 DSL: {json.dumps(plan, ensure_ascii=False)}\n执行结果:\n{tool_result}"},
     ]
-    
-    print("\n[Thinking] Agent 正在分析问题并构建查询计划...")
-    
-    response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-        tools=[QUERY_TOOL_SCHEMA],
-        tool_choice="auto",
-    )
-    
-    message = response.choices[0].message
-    tool_calls = message.tool_calls
-    
-    if not tool_calls:
-        print("\n[Info] 模型决定不调用工具，直接回答。")
-        return message.content or "未获得有效回答 (模型未调用工具)。"
-    
-    messages.append(message)
-    tool_outputs: list[str] = []
-    
-    print(f"\n[✅ 模型决定调用工具] 识别到 {len(tool_calls)} 个分析步骤")
 
-    for i, tool_call in enumerate(tool_calls):
-        if tool_call.function.name != "perform_analysis":
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": f"未知工具: {tool_call.function.name}",
-                }
-            )
-            continue
-            
-        try:
-            args = json.loads(tool_call.function.arguments or "{}")
-        except json.JSONDecodeError:
-            args = {}
-            
-        plan = args.get("plan", {})
-        
-        # 打印 DSL 计划
-        print(f"\n  ➡️  步骤 {i+1}: 执行分析计划 (DSL)")
-        print(f"      数据集: {plan.get('dataset', 'unknown')}")
-        if plan.get('metrics'):
-            metrics_str = ", ".join([f"{m.get('agg')}({m.get('field')})" for m in plan.get('metrics', [])])
-            print(f"      指标: {metrics_str}")
-        if plan.get('dimensions'):
-            print(f"      维度: {plan.get('dimensions')}")
-        if plan.get('filters'):
-            filters_str = ", ".join([f"{f.get('field')} {f.get('op')} {f.get('value')}" for f in plan.get('filters', [])])
-            print(f"      过滤: {filters_str}")
-        
-        # 执行 DSL 计划
-        tool_result = query_tool.execute_analysis(plan)
-        
-        # 打印部分执行结果
-        result_lines = tool_result.split('\n')
-        preview_lines = result_lines[:5]
-        print(f"  ✅  执行结果预览:")
-        for line in preview_lines:
-             print(f"      {line}")
-        if len(result_lines) > 5:
-             print(f"      ... (共 {len(result_lines)} 行)")
-        
-        # 简单的回退机制 (如果 DSL 执行出错，尝试简单关键词搜索)
-        if "找不到数据集" in tool_result or "聚合计算失败" in tool_result:
-             print(f"  ⚠️  DSL 执行异常，尝试回退到关键词匹配...")
-             fallback_result = query_tool.answer_question(user_query)
-             tool_result = f"DSL 执行遇到问题: {tool_result}\n\n尝试关键词匹配结果:\n{fallback_result}"
-
-        tool_outputs.append(tool_result)
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result,
-            }
-        )
-    
-    messages.append(
-        {
-            "role": "user",
-            "content": "请基于以上数据分析结果直接回答原问题。用简洁的语言总结结论。",
-        }
-    )
-    
-    print("\n[Thinking] Agent 正在根据分析结果生成最终回答...")
-    
-    final_response = client.chat.completions.create(
-        model="deepseek-chat",
-        messages=messages,
-    )
-    
+    final_response = client.chat.completions.create(model="deepseek-chat", messages=messages)
     final_text = final_response.choices[0].message.content or ""
     print(f"\n{'='*60}")
     return final_text

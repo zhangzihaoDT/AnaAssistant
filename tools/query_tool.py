@@ -95,21 +95,15 @@ class QueryTool:
                         return f"{dataset_name}.{column} 非空数量: {series.count()}"
         return "未能从问题中匹配到字段，请在问题中包含明确字段名。"
 
-    def execute_analysis(self, plan: dict) -> str:
-        """
-        Execute a BI DSL analysis plan.
-        """
-        # 记录开始执行
+    def execute_analysis_df(self, plan: dict) -> Union[pd.DataFrame, str]:
         print(f"      [QueryTool] 接收到 DSL 计划: {json.dumps(plan, ensure_ascii=False)}")
-        
+
         self._load_datasets()
         dataset_name = plan.get("dataset")
         if not dataset_name or dataset_name not in self.datasets:
-            # Try finding fuzzy match or default to first
             if not self.datasets:
                 return "未加载到任何数据集。"
             if not dataset_name:
-                 # Default to assign_data or order_full_data if available
                 if "assign_data" in self.datasets:
                     dataset_name = "assign_data"
                 elif "order_full_data" in self.datasets:
@@ -120,8 +114,7 @@ class QueryTool:
                 return f"找不到数据集: {dataset_name}。可用数据集: {list(self.datasets.keys())}"
 
         df = self.datasets[dataset_name]
-        
-        # 1. Filters
+
         filters = plan.get("filters", [])
         for f in filters:
             field = f.get("field")
@@ -129,7 +122,7 @@ class QueryTool:
             value = f.get("value")
             if field not in df.columns:
                 continue
-            
+
             if op == "==":
                 df = df[df[field] == value]
             elif op == "!=":
@@ -145,50 +138,46 @@ class QueryTool:
             elif op == "in" and isinstance(value, list):
                 df = df[df[field].isin(value)]
             elif op == "contains":
-                # Ensure the column is treated as string for contains check
                 df = df[df[field].astype(str).str.contains(str(value), na=False, regex=False)]
             elif op == "not contains":
                 df = df[~df[field].astype(str).str.contains(str(value), na=False, regex=False)]
             elif op == "matches":
-                # Regex match
                 df = df[df[field].astype(str).str.contains(str(value), na=False, regex=True)]
             elif op == "not matches":
                 df = df[~df[field].astype(str).str.contains(str(value), na=False, regex=True)]
 
-        # 2. Grouping & Aggregation
         dimensions = plan.get("dimensions", [])
         metrics = plan.get("metrics", [])
-        
+
         result_df = df
-        
+
         if metrics:
-            agg_dict = {}
-            rename_dict = {}
+            agg_dict: dict[str, Any] = {}
+            alias_by_field: dict[str, str] = {}
+
             for m in metrics:
                 field = m.get("field")
                 agg_func = m.get("agg", "count")
-                alias = m.get("alias", f"{field}_{agg_func}")
-                
-                if field not in df.columns:
-                    continue
-                    
-                # Handle special count case
+                alias = m.get("alias")
+
                 if agg_func == "count" and field == "*":
-                     # Just use any column for counting
-                     field = df.columns[0]
-                
+                    field = df.columns[0]
+
+                if not field or field not in df.columns:
+                    continue
+
                 if field in agg_dict:
-                     # If same field multiple aggs, need complex handling, simplify for now
-                     if isinstance(agg_dict[field], list):
-                         agg_dict[field].append(agg_func)
-                     else:
-                         agg_dict[field] = [agg_dict[field], agg_func]
+                    existing = agg_dict[field]
+                    if isinstance(existing, list):
+                        existing.append(agg_func)
+                    else:
+                        agg_dict[field] = [existing, agg_func]
                 else:
                     agg_dict[field] = agg_func
-                
-                # We can't easily rename in one go with simple agg, so we'll rename after
-                # But if dimensions exist, we use groupby
-            
+
+                if isinstance(agg_func, str) and alias:
+                    alias_by_field[field] = alias
+
             if dimensions:
                 valid_dims = [d for d in dimensions if d in df.columns]
                 if valid_dims:
@@ -197,22 +186,23 @@ class QueryTool:
                     except Exception as e:
                         return f"聚合计算失败: {e}"
                 else:
-                     # Dimensions invalid, fallback to no group
-                     result_df = df.agg(agg_dict).to_frame().T
+                    result_df = df.agg(agg_dict).to_frame().T
             else:
-                # No dimensions, scalar aggregation
                 try:
                     result_df = df.agg(agg_dict).to_frame().T
                 except Exception as e:
                     return f"聚合计算失败: {e}"
-        
-        # 3. Sorting
+
+            if alias_by_field:
+                rename_map = {field: alias for field, alias in alias_by_field.items() if field in result_df.columns}
+                if rename_map:
+                    result_df = result_df.rename(columns=rename_map)
+
         sort_opts = plan.get("sort", [])
         if sort_opts and not result_df.empty:
-            # Support single sort for now or list
             if isinstance(sort_opts, dict):
                 sort_opts = [sort_opts]
-            
+
             by = []
             ascending = []
             for s in sort_opts:
@@ -220,15 +210,20 @@ class QueryTool:
                 if field in result_df.columns:
                     by.append(field)
                     ascending.append(s.get("order", "asc") == "asc")
-            
+
             if by:
                 result_df = result_df.sort_values(by=by, ascending=ascending)
 
-        # 4. Limit
         limit = plan.get("limit")
         if limit:
             result_df = result_df.head(int(limit))
 
+        return result_df
+
+    def execute_analysis(self, plan: dict) -> str:
+        result_df = self.execute_analysis_df(plan)
+        if isinstance(result_df, str):
+            return result_df
         return result_df.to_string(index=False)
 
 
