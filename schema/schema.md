@@ -2,6 +2,33 @@
 
 本文档定义了数据集的业务逻辑、指标计算规则及可用维度，用于指导 Planning Agent 生成准确的分析计划。
 
+## 0. 澄清规则 (Clarifications)
+
+在生成规划 DSL 前，如果用户问题存在口径歧义，必须先澄清，确认后再生成 plans。
+
+### 0.1 口语“销量”澄清
+
+用户如果问“销量/卖了多少/成交量”但未明确口径，必须先澄清后再规划：
+
+- 澄清选项仅限：**锁单量**（lock_time） / **交付数**（delivery_date） / **开票数**（invoice_upload_time）
+- 不允许默认选择其中一个口径
+- 澄清后再生成对应 metric 与时间字段，并补齐对应“时间字段非空”过滤条件
+
+### 0.2 城市口径澄清
+
+用户如果在问题里提到“南京/南京市”等城市，但未明确是按门店口径还是上牌口径，必须先澄清后再规划：
+
+- 门店城市：`store_city`
+- 上牌城市：`license_city`
+
+澄清后再生成对应 filters。若数据中存在“南京/南京市”这类值别名差异，filters 建议使用 `in` 操作符携带多值以保证命中。
+
+**负样本（不要误判为城市）**
+
+- 句首动词/意图词不是城市：如“查询/统计/汇总/查看/分析/对比”，不要因为后面跟着“去年/本月/昨天”等时间词就把它当作城市。
+  - 例如：“查询去年的下发线索数,试驾数,锁单数”中的“查询”不是城市，不应触发城市口径澄清。
+  - 例如：“统计今年锁单量”中的“统计”不是城市，不应触发城市口径澄清。
+
 ## 1. 时间维度 (Time Dimensions)
 
 用于按时间段（日、周、月、年）进行趋势分析和筛选。
@@ -36,8 +63,6 @@
 - **小订数**: `order_number` 计数 (必须添加过滤条件: `intention_payment_time` 非空)。注意：时间筛选应基于 `intention_payment_time`。
 - **开票金额**: `invoice_amount` (求和/平均)
 - **订单计数**: `order_number` 计数
-
-### 客户与行为指标
 
 - **年龄**: `age` (平均/分布)
 - **试驾次数**: `td_countd` (求和/平均)
@@ -96,50 +121,51 @@
 
 ## 附录：原始字段 Schema 映射
 
-### order_full_data.parquet (Total Rows: 420373)
+### order_full_data.parquet (Total Rows: 420697)
 
 | Column Name               | Data Type      | Description           |
 | :------------------------ | :------------- | :-------------------- |
-| store_create_date         | datetime64[ns] | 门店创建日期          |
-| age                       | float64        | 年龄                  |
-| invoice_upload_time       | datetime64[ns] | 发票上传时间          |
-| belong_intent_series      | str            | 意向系列              |
-| drive_series_cn           | category       | 驱动系列（中文）      |
-| order_type                | str            | 订单类型              |
-| order_create_time         | datetime64[ns] | 订单创建时间          |
-| order_create_date         | datetime64[ns] | 订单创建日期          |
-| lead_assign_time_max      | str            | 线索最大下发时间      |
-| order_number              | string         | 订单号                |
-| store_name                | str            | 门店名称              |
-| deposit_payment_time      | datetime64[ns] | 大定支付时间          |
-| intention_payment_time    | datetime64[ns] | 意向金支付时间        |
-| is_staff                  | category       | 是否员工              |
-| first_test_drive_time     | datetime64[ns] | 首次试驾时间          |
-| deposit_refund_time       | datetime64[ns] | 大定退款时间          |
-| delivery_date             | datetime64[ns] | 交付日期              |
-| intention_refund_time     | datetime64[ns] | 意向金退款时间        |
-| finance_product           | str            | 金融产品              |
-| lock_time                 | datetime64[ns] | 锁单时间              |
 | series                    | str            | 车型系列              |
-| license_city              | str            | 上牌城市              |
-| parent_region_name        | category       | 大区名称              |
-| product_name              | str            | 产品名称              |
-| store_city                | str            | 门店城市              |
-| first_touch_time          | datetime64[ns] | 首次接触时间          |
+| final_payment_way         | category       | 尾款支付方式          |
+| intention_refund_time     | datetime64[ns] | 意向金退款时间        |
+| age                       | float64        | 年龄                  |
+| delivery_date             | datetime64[ns] | 交付日期              |
+| invoice_upload_time       | datetime64[ns] | 发票上传时间          |
+| finance_product           | str            | 金融产品              |
+| first_assign_time         | str            | 首次下发时间          |
+| first_test_drive_time     | datetime64[ns] | 首次试驾时间          |
 | first_middle_channel_name | str            | 首次中间渠道名称      |
-| is_hold                   | category       | 是否保留              |
+| lock_time                 | datetime64[ns] | 锁单时间              |
+| drive_series_cn           | category       | 驱动系列（中文）      |
+| license_city_level        | category       | 上牌城市等级          |
+| belong_intent_series      | str            | 意向系列              |
+| order_create_time         | datetime64[ns] | 订单创建时间          |
 | gender                    | category       | 性别                  |
+| owner_cell_phone          | string         | 车主手机号            |
+| approve_refund_time       | datetime64[ns] | 审批退款时间          |
+| product_name              | str            | 产品名称              |
+| invoice_amount            | float64        | 开票金额              |
+| store_city                | str            | 门店城市              |
+| store_create_date         | datetime64[ns] | 门店创建日期          |
+| store_name                | str            | 门店名称              |
+| order_create_date         | datetime64[ns] | 订单创建日期          |
+| order_number              | string         | 订单号                |
+| lead_assign_time_max      | str            | 线索最大下发时间      |
+| first_touch_time          | datetime64[ns] | 首次接触时间          |
+| order_type                | str            | 订单类型              |
+| deposit_refund_time       | datetime64[ns] | 大定退款时间          |
+| parent_region_name        | category       | 大区名称              |
 | td_countd                 | float64        | 试驾次数              |
 | main_lead_id              | str            | 关联试驾表的主线索 ID |
-| final_payment_way         | category       | 尾款支付方式          |
-| license_city_level        | category       | 上牌城市等级          |
 | license_province          | str            | 上牌省份              |
-| invoice_amount            | float64        | 开票金额              |
 | apply_refund_time         | datetime64[ns] | 申请退款时间          |
-| first_assign_time         | str            | 首次下发时间          |
-| approve_refund_time       | datetime64[ns] | 审批退款时间          |
+| license_city              | str            | 上牌城市              |
+| is_hold                   | category       | 是否保留              |
+| intention_payment_time    | datetime64[ns] | 意向金支付时间        |
+| is_staff                  | category       | 是否员工              |
+| deposit_payment_time      | datetime64[ns] | 大定支付时间          |
 
-### assign_data.csv (Total Rows: 1164)
+### assign_data.csv (Total Rows: 1167)
 
 | Column Name               | Data Type | Description                      |
 | :------------------------ | :-------- | :------------------------------- |
