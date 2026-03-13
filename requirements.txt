@@ -18,3 +18,4 @@ typing_extensions==4.15.0
 e2b-code-interpreter>=1.0.0
 pandas
 pyarrow
+plotly

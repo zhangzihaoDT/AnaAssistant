@@ -1,3 +1,4 @@
-/Users/zihao\_/Documents/coding/dataset/formatted/order_full_data.parquet
-
-/Users/zihao\_/Documents/coding/dataset/original/assign_data.csv
+订单表：/Users/zihao\_/Documents/coding/dataset/formatted/order_full_data.parquet
+下发线索转化率：/Users/zihao\_/Documents/coding/dataset/original/assign_data.csv
+试驾分析：/Users/zihao\_/Documents/coding/dataset/original/test_drive_data.csv
+锁单归因：/Users/zihao\*/Documents/coding/dataset/formatted/lock_attribution_data.parquet
