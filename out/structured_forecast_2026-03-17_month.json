@@ -1,0 +1,255 @@
+{
+  "framework": "Metrics Map + 统计分布 + 情景假设 = 销量预测",
+  "dataset": "/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv",
+  "as_of_date": "2026-03-17",
+  "samples": {
+    "recent_days": 30,
+    "history_days": 180
+  },
+  "metrics_map": {
+    "target_metric": "订单表.锁单数",
+    "traffic_metric": "下发线索转化率.下发线索数",
+    "conversion_metric": "下发线索转化率.下发线索当30日锁单率",
+    "identity": "lock_orders = leads × lock_rate"
+  },
+  "recent_performance": {
+    "daily_leads_mean": 10013.5,
+    "daily_lock_rate_mean": 0.012167,
+    "daily_lock_orders_mean": 138.47,
+    "lead_daily_delta": 320.720133,
+    "rate_daily_delta": 0.0
+  },
+  "distribution": {
+    "leads": {
+      "mean": 13463.95,
+      "std": 3794.820785,
+      "p10": 9602.7,
+      "p30": 12052.8,
+      "p50": 13314.0,
+      "p70": 15091.5,
+      "p90": 17701.5,
+      "zscore_recent_mean": -0.909252
+    },
+    "lock_rate": {
+      "mean": 0.014583,
+      "std": 0.007144,
+      "p10": 0.008,
+      "p30": 0.01,
+      "p50": 0.013,
+      "p70": 0.017,
+      "p90": 0.024,
+      "zscore_recent_mean": -0.338233
+    },
+    "lock_orders": {
+      "mean": 284.927778,
+      "std": 269.176832,
+      "p10": 91.9,
+      "p30": 128.0,
+      "p50": 219.5,
+      "p70": 312.0,
+      "p90": 571.1,
+      "zscore_recent_mean": -0.544107
+    }
+  },
+  "scenario_forecast": {
+    "forecast_days": 28,
+    "regime_quantile_based": {
+      "p10": {
+        "daily_leads": 8093.12,
+        "daily_lock_rate": 0.009,
+        "daily_lock_orders": 72.84,
+        "period_lock_orders": 2039.47
+      },
+      "p50": {
+        "daily_leads": 11500.72,
+        "daily_lock_rate": 0.016,
+        "daily_lock_orders": 184.01,
+        "period_lock_orders": 5152.32
+      },
+      "p90": {
+        "daily_leads": 17314.72,
+        "daily_lock_rate": 0.028,
+        "daily_lock_orders": 484.81,
+        "period_lock_orders": 13574.74
+      }
+    },
+    "regime_quantile_bias_corrected": {
+      "p10": {
+        "daily_lock_orders_bias_corrected": 83.03,
+        "period_lock_orders_bias_corrected": 2324.76
+      },
+      "p50": {
+        "daily_lock_orders_bias_corrected": 209.75,
+        "period_lock_orders_bias_corrected": 5873.04
+      },
+      "p90": {
+        "daily_lock_orders_bias_corrected": 552.63,
+        "period_lock_orders_bias_corrected": 15473.61
+      }
+    },
+    "bayesian_calibration": {
+      "enabled": 1,
+      "method": "regime_quantile",
+      "future_days": 28,
+      "future_regime_days": {
+        "activity": 0,
+        "non_activity": 28
+      },
+      "regime_inputs": {
+        "activity": {
+          "leads": {
+            "n": 262,
+            "p10": 5945.6,
+            "p50": 10272.0,
+            "p90": 19394.9
+          },
+          "lock_rate": {
+            "n": 262,
+            "p10": 0.0071,
+            "p50": 0.018000000000000002,
+            "p90": 0.033
+          }
+        },
+        "non_activity": {
+          "leads": {
+            "n": 545,
+            "p10": 3763.4,
+            "p50": 7171.0,
+            "p90": 12985.000000000002
+          },
+          "lock_rate": {
+            "n": 545,
+            "p10": 0.009000000000000001,
+            "p50": 0.016,
+            "p90": 0.027999999999999997
+          }
+        }
+      },
+      "regime_daily_lock_orders_reference": {
+        "activity": {
+          "p10": 42.21,
+          "p50": 184.9,
+          "p90": 640.03
+        },
+        "non_activity": {
+          "p10": 33.87,
+          "p50": 114.74,
+          "p90": 363.58
+        }
+      }
+    },
+    "bias_correction": {
+      "regime_quantile_based": {
+        "enabled": 1,
+        "samples": 365,
+        "bias": -1007.137287671233,
+        "mean_true": 7199.857534246576,
+        "bias_rate": -0.13988294669453127,
+        "factor": 1.1398829466945313
+      }
+    },
+    "month_forecast": {
+      "target_month": "2026-03",
+      "month_start": "2026-03-01",
+      "month_end": "2026-03-31",
+      "as_of_date": "2026-03-17",
+      "actual_end_date": "2026-03-17",
+      "actual_days": 17,
+      "expected_days": 17,
+      "missing_days": 0,
+      "actual_lock_orders_sum": 3160.0,
+      "remaining_days": 14,
+      "remaining_start_date": "2026-03-18",
+      "month_end_date": "2026-03-31",
+      "bayesian_calibration": {
+        "enabled": 1,
+        "method": "regime_quantile",
+        "future_days": 14,
+        "future_regime_days": {
+          "activity": 0,
+          "non_activity": 14
+        },
+        "regime_inputs": {
+          "activity": {
+            "leads": {
+              "n": 262,
+              "p10": 5945.6,
+              "p50": 10272.0,
+              "p90": 19394.9
+            },
+            "lock_rate": {
+              "n": 262,
+              "p10": 0.0071,
+              "p50": 0.018000000000000002,
+              "p90": 0.033
+            }
+          },
+          "non_activity": {
+            "leads": {
+              "n": 545,
+              "p10": 3763.4,
+              "p50": 7171.0,
+              "p90": 12985.000000000002
+            },
+            "lock_rate": {
+              "n": 545,
+              "p10": 0.009000000000000001,
+              "p50": 0.016,
+              "p90": 0.027999999999999997
+            }
+          }
+        },
+        "regime_daily_lock_orders_reference": {
+          "activity": {
+            "p10": 42.21,
+            "p50": 184.9,
+            "p90": 640.03
+          },
+          "non_activity": {
+            "p10": 33.87,
+            "p50": 114.74,
+            "p90": 363.58
+          }
+        }
+      },
+      "bias_correction": {
+        "regime_quantile_based": {
+          "enabled": 1,
+          "samples": 365,
+          "bias": -739.2006575342466,
+          "mean_true": 3594.7013698630135,
+          "bias_rate": -0.20563617988729227,
+          "factor": 1.2056361798872923
+        }
+      },
+      "month_totals": {
+        "actual_lock_orders_to_date": 3160.0,
+        "remaining_lock_orders_p10": 736.86,
+        "remaining_lock_orders_p50": 2073.27,
+        "remaining_lock_orders_p90": 5907.31,
+        "remaining_lock_orders_bias_corrected_p10": 888.39,
+        "remaining_lock_orders_bias_corrected_p50": 2499.61,
+        "remaining_lock_orders_bias_corrected_p90": 7122.07,
+        "month_lock_orders_p10": 3896.86,
+        "month_lock_orders_p50": 5233.27,
+        "month_lock_orders_p90": 9067.31,
+        "month_lock_orders_bias_corrected_p10": 4048.39,
+        "month_lock_orders_bias_corrected_p50": 5659.61,
+        "month_lock_orders_bias_corrected_p90": 10282.07,
+        "regime_daily_lock_orders_reference": {
+          "activity": {
+            "p10": 42.21,
+            "p50": 184.9,
+            "p90": 640.03
+          },
+          "non_activity": {
+            "p10": 33.87,
+            "p50": 114.74,
+            "p90": 363.58
+          }
+        }
+      }
+    }
+  },
+  "decision_summary": "截至 3/17 已锁单 3160；预计 3 月整月（bias 校正后）P50 约 5659.61，区间 [4048.39, 10282.07]。"
+}

@@ -284,7 +284,7 @@ class PlanningAgent:
         q = (user_query or "").strip().lstrip(" \t\r\n\"'“”‘’")
         if not q:
             return None
-        stop = {"查询", "统计", "汇总", "查看", "分析", "对比"}
+        stop = {"查询", "统计", "汇总", "查看", "分析", "对比", "输出", "导出", "列出", "展示", "打印", "生成"}
         m = re.search(r"([\u4e00-\u9fff]{2,8})市", q)
         if m:
             city = (m.group(1) or "").strip()

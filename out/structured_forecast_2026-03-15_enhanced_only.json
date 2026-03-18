@@ -1,0 +1,118 @@
+{
+  "framework": "Metrics Map + 统计分布 + 情景假设 = 销量预测",
+  "dataset": "/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv",
+  "as_of_date": "2026-03-15",
+  "samples": {
+    "recent_days": 30,
+    "history_days": 180
+  },
+  "metrics_map": {
+    "target_metric": "订单表.锁单数",
+    "traffic_metric": "下发线索转化率.下发线索数",
+    "conversion_metric": "下发线索转化率.下发线索当30日锁单率",
+    "identity": "lock_orders = leads × lock_rate"
+  },
+  "recent_performance": {
+    "daily_leads_mean": 9573.03,
+    "daily_lock_rate_mean": 0.012433,
+    "daily_lock_orders_mean": 133.17,
+    "lead_daily_delta": 367.341268,
+    "rate_daily_delta": 7.319e-05,
+    "rate_mature_history_days": 150
+  },
+  "distribution": {
+    "leads": {
+      "mean": 13511.222222,
+      "std": 3794.978257,
+      "p10": 9602.7,
+      "p30": 12172.3,
+      "p50": 13596.0,
+      "p70": 15205.0,
+      "p90": 17701.5,
+      "zscore_recent_mean": -1.037737
+    },
+    "lock_rate": {
+      "mean": 0.014589,
+      "std": 0.007137,
+      "p10": 0.008,
+      "p30": 0.01,
+      "p50": 0.013,
+      "p70": 0.017,
+      "p90": 0.024,
+      "zscore_recent_mean": -0.302041
+    },
+    "lock_orders": {
+      "mean": 287.777778,
+      "std": 268.823064,
+      "p10": 91.9,
+      "p30": 128.7,
+      "p50": 225.0,
+      "p70": 323.8,
+      "p90": 571.1,
+      "zscore_recent_mean": -0.575141
+    }
+  },
+  "scenario_forecast": {
+    "forecast_days": 28,
+    "enhanced_assumption_based": {
+      "conservative": {
+        "lead_multiplier": 0.9,
+        "rate_multiplier": 0.95,
+        "lead_daily_delta": 367.341268,
+        "rate_daily_delta": 7.319e-05,
+        "daily_leads": 13574.84,
+        "daily_lock_rate": 0.013025,
+        "daily_lock_orders": 180.79,
+        "period_lock_orders": 5062.04,
+        "matched_rate_daily_mean": 0.01325,
+        "lead_percentile_daily_mean": 0.447857,
+        "daily_lock_orders_raw": 180.79,
+        "period_lock_orders_raw": 5062.04,
+        "daily_lock_orders_bias_corrected": 206.08,
+        "period_lock_orders_bias_corrected": 5770.1
+      },
+      "base": {
+        "lead_multiplier": 1.0,
+        "rate_multiplier": 1.0,
+        "lead_daily_delta": 367.341268,
+        "rate_daily_delta": 7.319e-05,
+        "daily_leads": 14532.14,
+        "daily_lock_rate": 0.013684,
+        "daily_lock_orders": 203.06,
+        "period_lock_orders": 5685.72,
+        "matched_rate_daily_mean": 0.013946,
+        "lead_percentile_daily_mean": 0.531429,
+        "daily_lock_orders_raw": 203.06,
+        "period_lock_orders_raw": 5685.72,
+        "daily_lock_orders_bias_corrected": 231.46,
+        "period_lock_orders_bias_corrected": 6481.01
+      },
+      "optimistic": {
+        "lead_multiplier": 1.15,
+        "rate_multiplier": 1.1,
+        "lead_daily_delta": 367.341268,
+        "rate_daily_delta": 7.319e-05,
+        "daily_leads": 15968.1,
+        "daily_lock_rate": 0.014922,
+        "daily_lock_orders": 242.56,
+        "period_lock_orders": 6791.74,
+        "matched_rate_daily_mean": 0.015179,
+        "lead_percentile_daily_mean": 0.653333,
+        "daily_lock_orders_raw": 242.56,
+        "period_lock_orders_raw": 6791.74,
+        "daily_lock_orders_bias_corrected": 276.49,
+        "period_lock_orders_bias_corrected": 7741.74
+      }
+    },
+    "bias_correction": {
+      "enhanced_assumption_based": {
+        "enabled": 1,
+        "samples": 365,
+        "bias": -1007.6965205479453,
+        "mean_true": 7204.235616438356,
+        "bias_rate": -0.13987556407075594,
+        "factor": 1.1398755640707559
+      }
+    }
+  }
+}

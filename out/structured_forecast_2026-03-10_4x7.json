@@ -1,0 +1,413 @@
+{
+  "framework": "Metrics Map + 统计分布 + 情景假设 = 销量预测",
+  "dataset": "/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv",
+  "as_of_date": "2026-03-10",
+  "samples": {
+    "recent_days": 30,
+    "history_days": 180
+  },
+  "metrics_map": {
+    "target_metric": "订单表.锁单数",
+    "traffic_metric": "下发线索转化率.下发线索数",
+    "conversion_metric": "下发线索转化率.下发线索当30日锁单率",
+    "identity": "lock_orders = leads × lock_rate"
+  },
+  "recent_performance": {
+    "daily_leads_mean": 8930.83,
+    "daily_lock_rate_mean": 0.012167,
+    "daily_lock_orders_mean": 113.5
+  },
+  "distribution": {
+    "leads": {
+      "mean": 13685.538889,
+      "std": 3886.094081,
+      "p10": 9602.7,
+      "p30": 12239.9,
+      "p50": 13749.5,
+      "p70": 15411.5,
+      "p90": 17903.4,
+      "zscore_recent_mean": -1.223518
+    },
+    "lock_rate": {
+      "mean": 0.01445,
+      "std": 0.00722,
+      "p10": 0.007,
+      "p30": 0.01,
+      "p50": 0.012,
+      "p70": 0.017,
+      "p90": 0.024,
+      "zscore_recent_mean": -0.316251
+    },
+    "lock_orders": {
+      "mean": 305.316667,
+      "std": 290.229784,
+      "p10": 91.9,
+      "p30": 129.0,
+      "p50": 228.5,
+      "p70": 338.6,
+      "p90": 618.6,
+      "zscore_recent_mean": -0.660913
+    }
+  },
+  "scenario_forecast": {
+    "forecast_days": 28,
+    "distribution_based": {
+      "conservative": {
+        "daily_leads": 9602.7,
+        "daily_lock_rate": 0.007,
+        "daily_lock_orders": 67.22,
+        "period_lock_orders": 1882.13
+      },
+      "base": {
+        "daily_leads": 13749.5,
+        "daily_lock_rate": 0.012,
+        "daily_lock_orders": 164.99,
+        "period_lock_orders": 4619.83
+      },
+      "optimistic": {
+        "daily_leads": 17903.4,
+        "daily_lock_rate": 0.024,
+        "daily_lock_orders": 429.68,
+        "period_lock_orders": 12031.08
+      }
+    },
+    "assumption_based": {
+      "conservative": {
+        "lead_multiplier": 0.9,
+        "rate_multiplier": 0.95,
+        "daily_leads": 8037.75,
+        "daily_lock_rate": 0.011558,
+        "daily_lock_orders": 92.9,
+        "period_lock_orders": 2601.28
+      },
+      "base": {
+        "lead_multiplier": 1.0,
+        "rate_multiplier": 1.0,
+        "daily_leads": 8930.83,
+        "daily_lock_rate": 0.012167,
+        "daily_lock_orders": 108.66,
+        "period_lock_orders": 3042.44
+      },
+      "optimistic": {
+        "lead_multiplier": 1.15,
+        "rate_multiplier": 1.1,
+        "daily_leads": 10270.46,
+        "daily_lock_rate": 0.013383,
+        "daily_lock_orders": 137.45,
+        "period_lock_orders": 3848.68
+      }
+    },
+    "segmented_4x7_forecast": {
+      "horizon_days": 28,
+      "segment_baselines": {
+        "工作日": {
+          "history_days": 80,
+          "leads_median": 12298.0,
+          "lock_rate_median": 0.01
+        },
+        "节假日": {
+          "history_days": 34,
+          "leads_median": 12522.5,
+          "lock_rate_median": 0.0175
+        },
+        "活动日": {
+          "history_days": 66,
+          "leads_median": 16561.5,
+          "lock_rate_median": 0.015
+        }
+      },
+      "segment_summary": [
+        {
+          "segment": "工作日",
+          "forecast_days": 20,
+          "pred_lock_orders_sum": 2459.6,
+          "pred_lock_orders_daily_mean": 122.98
+        },
+        {
+          "segment": "节假日",
+          "forecast_days": 8,
+          "pred_lock_orders_sum": 1753.12,
+          "pred_lock_orders_daily_mean": 219.14
+        },
+        {
+          "segment": "活动日",
+          "forecast_days": 0,
+          "pred_lock_orders_sum": 0.0,
+          "pred_lock_orders_daily_mean": 0.0
+        }
+      ],
+      "weekly_summary": [
+        {
+          "week_idx": 1,
+          "start_date": "2026-03-11",
+          "end_date": "2026-03-17",
+          "pred_lock_orders_sum": 1053.18,
+          "segment_days": {
+            "工作日": 5,
+            "节假日": 2,
+            "活动日": 0
+          }
+        },
+        {
+          "week_idx": 2,
+          "start_date": "2026-03-18",
+          "end_date": "2026-03-24",
+          "pred_lock_orders_sum": 1053.18,
+          "segment_days": {
+            "工作日": 5,
+            "节假日": 2,
+            "活动日": 0
+          }
+        },
+        {
+          "week_idx": 3,
+          "start_date": "2026-03-25",
+          "end_date": "2026-03-31",
+          "pred_lock_orders_sum": 1053.18,
+          "segment_days": {
+            "工作日": 5,
+            "节假日": 2,
+            "活动日": 0
+          }
+        },
+        {
+          "week_idx": 4,
+          "start_date": "2026-04-01",
+          "end_date": "2026-04-07",
+          "pred_lock_orders_sum": 1053.18,
+          "segment_days": {
+            "工作日": 5,
+            "节假日": 2,
+            "活动日": 0
+          }
+        }
+      ],
+      "daily_forecast": [
+        {
+          "date": "2026-03-11",
+          "week_idx": 1,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-12",
+          "week_idx": 1,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-13",
+          "week_idx": 1,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-14",
+          "week_idx": 1,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-15",
+          "week_idx": 1,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-16",
+          "week_idx": 1,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-17",
+          "week_idx": 1,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-18",
+          "week_idx": 2,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-19",
+          "week_idx": 2,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-20",
+          "week_idx": 2,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-21",
+          "week_idx": 2,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-22",
+          "week_idx": 2,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-23",
+          "week_idx": 2,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-24",
+          "week_idx": 2,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-25",
+          "week_idx": 3,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-26",
+          "week_idx": 3,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-27",
+          "week_idx": 3,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-28",
+          "week_idx": 3,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-29",
+          "week_idx": 3,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-03-30",
+          "week_idx": 3,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-03-31",
+          "week_idx": 3,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-04-01",
+          "week_idx": 4,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-04-02",
+          "week_idx": 4,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-04-03",
+          "week_idx": 4,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-04-04",
+          "week_idx": 4,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-04-05",
+          "week_idx": 4,
+          "segment": "节假日",
+          "pred_leads": 12522.5,
+          "pred_lock_rate": 0.0175,
+          "pred_lock_orders": 219.14
+        },
+        {
+          "date": "2026-04-06",
+          "week_idx": 4,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        },
+        {
+          "date": "2026-04-07",
+          "week_idx": 4,
+          "segment": "工作日",
+          "pred_leads": 12298.0,
+          "pred_lock_rate": 0.01,
+          "pred_lock_orders": 122.98
+        }
+      ]
+    }
+  }
+}

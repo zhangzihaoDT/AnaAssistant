@@ -1,0 +1,321 @@
+{
+  "forecast_script": "/Users/zihao_/Documents/github/26W06_Tool_calls/scripts/structured_business_forecast.py",
+  "dataset": "/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv",
+  "lookback_recent": 30,
+  "lookback_history": 180,
+  "horizon_range": [
+    7,
+    35
+  ],
+  "best_horizon_by_model": {
+    "enhanced_assumption_based": {
+      "horizon_days": 31,
+      "samples": 149,
+      "mae": 2060.2784563758387,
+      "rmse": 3070.0168313559334,
+      "mape": 0.24442703497591592,
+      "bias": -902.8279865771816
+    }
+  },
+  "best_overall": {
+    "model": "enhanced_assumption_based",
+    "horizon_days": 31,
+    "samples": 149,
+    "mae": 2060.2784563758387,
+    "rmse": 3070.0168313559334,
+    "mape": 0.24442703497591592,
+    "bias": -902.8279865771816
+  },
+  "all_horizon_metrics": [
+    {
+      "horizon_days": 7,
+      "samples": 173,
+      "enhanced_assumption_based": {
+        "mae": 748.4431213872832,
+        "rmse": 1080.924191327279,
+        "mape": 0.3963381053212881,
+        "bias": -514.6870520231214
+      }
+    },
+    {
+      "horizon_days": 8,
+      "samples": 172,
+      "enhanced_assumption_based": {
+        "mae": 847.3694767441859,
+        "rmse": 1210.8530711360693,
+        "mape": 0.3853884703233067,
+        "bias": -577.9273837209302
+      }
+    },
+    {
+      "horizon_days": 9,
+      "samples": 171,
+      "enhanced_assumption_based": {
+        "mae": 943.150350877193,
+        "rmse": 1336.422692173453,
+        "mape": 0.3749487897950254,
+        "bias": -639.1519883040936
+      }
+    },
+    {
+      "horizon_days": 10,
+      "samples": 170,
+      "enhanced_assumption_based": {
+        "mae": 1027.9024705882352,
+        "rmse": 1451.9097520247965,
+        "mape": 0.36222144924146077,
+        "bias": -694.774705882353
+      }
+    },
+    {
+      "horizon_days": 11,
+      "samples": 169,
+      "enhanced_assumption_based": {
+        "mae": 1111.4519526627219,
+        "rmse": 1567.0524457210222,
+        "mape": 0.35276556071655085,
+        "bias": -745.5592899408284
+      }
+    },
+    {
+      "horizon_days": 12,
+      "samples": 168,
+      "enhanced_assumption_based": {
+        "mae": 1198.5785119047619,
+        "rmse": 1686.8659839638021,
+        "mape": 0.34721613095890674,
+        "bias": -794.3585119047618
+      }
+    },
+    {
+      "horizon_days": 13,
+      "samples": 167,
+      "enhanced_assumption_based": {
+        "mae": 1283.9777245508983,
+        "rmse": 1802.9386684631068,
+        "mape": 0.34108523873059426,
+        "bias": -841.4541317365271
+      }
+    },
+    {
+      "horizon_days": 14,
+      "samples": 166,
+      "enhanced_assumption_based": {
+        "mae": 1364.0478313253013,
+        "rmse": 1918.2219312457169,
+        "mape": 0.3344038316266842,
+        "bias": -883.9184337349398
+      }
+    },
+    {
+      "horizon_days": 15,
+      "samples": 165,
+      "enhanced_assumption_based": {
+        "mae": 1441.5583636363638,
+        "rmse": 2031.8610089673502,
+        "mape": 0.328608597213548,
+        "bias": -922.1766666666668
+      }
+    },
+    {
+      "horizon_days": 16,
+      "samples": 164,
+      "enhanced_assumption_based": {
+        "mae": 1522.6959146341464,
+        "rmse": 2137.745024792765,
+        "mape": 0.3255624031968678,
+        "bias": -956.5253048780487
+      }
+    },
+    {
+      "horizon_days": 17,
+      "samples": 163,
+      "enhanced_assumption_based": {
+        "mae": 1592.9565644171778,
+        "rmse": 2235.3069216783338,
+        "mape": 0.3202582536838062,
+        "bias": -985.8425766871165
+      }
+    },
+    {
+      "horizon_days": 18,
+      "samples": 162,
+      "enhanced_assumption_based": {
+        "mae": 1659.7343209876542,
+        "rmse": 2330.07691802409,
+        "mape": 0.31552554178271436,
+        "bias": -1009.8292592592591
+      }
+    },
+    {
+      "horizon_days": 19,
+      "samples": 161,
+      "enhanced_assumption_based": {
+        "mae": 1723.4840372670808,
+        "rmse": 2422.7374769074345,
+        "mape": 0.31143308757549365,
+        "bias": -1029.1523602484474
+      }
+    },
+    {
+      "horizon_days": 20,
+      "samples": 160,
+      "enhanced_assumption_based": {
+        "mae": 1782.0501874999998,
+        "rmse": 2502.7437845309146,
+        "mape": 0.30748024230206233,
+        "bias": -1042.5560625
+      }
+    },
+    {
+      "horizon_days": 21,
+      "samples": 159,
+      "enhanced_assumption_based": {
+        "mae": 1829.82,
+        "rmse": 2572.769615332837,
+        "mape": 0.3021703126496373,
+        "bias": -1048.1813836477988
+      }
+    },
+    {
+      "horizon_days": 22,
+      "samples": 158,
+      "enhanced_assumption_based": {
+        "mae": 1874.058670886076,
+        "rmse": 2642.895061364849,
+        "mape": 0.2967208657382336,
+        "bias": -1051.2687974683545
+      }
+    },
+    {
+      "horizon_days": 23,
+      "samples": 157,
+      "enhanced_assumption_based": {
+        "mae": 1907.242611464968,
+        "rmse": 2706.0125739953646,
+        "mape": 0.28930566787619705,
+        "bias": -1050.9285987261146
+      }
+    },
+    {
+      "horizon_days": 24,
+      "samples": 156,
+      "enhanced_assumption_based": {
+        "mae": 1929.1471794871793,
+        "rmse": 2761.687503222464,
+        "mape": 0.28041180904390234,
+        "bias": -1047.7924358974358
+      }
+    },
+    {
+      "horizon_days": 25,
+      "samples": 155,
+      "enhanced_assumption_based": {
+        "mae": 1943.7780645161288,
+        "rmse": 2814.3330167731315,
+        "mape": 0.27161150751752555,
+        "bias": -1039.4910967741935
+      }
+    },
+    {
+      "horizon_days": 26,
+      "samples": 154,
+      "enhanced_assumption_based": {
+        "mae": 1957.81512987013,
+        "rmse": 2866.711984992676,
+        "mape": 0.2638777033932373,
+        "bias": -1028.0947402597403
+      }
+    },
+    {
+      "horizon_days": 27,
+      "samples": 153,
+      "enhanced_assumption_based": {
+        "mae": 1969.961960784314,
+        "rmse": 2911.20512922436,
+        "mape": 0.2567209196863021,
+        "bias": -1012.4756862745099
+      }
+    },
+    {
+      "horizon_days": 28,
+      "samples": 152,
+      "enhanced_assumption_based": {
+        "mae": 1972.4511184210526,
+        "rmse": 2940.4525984577567,
+        "mape": 0.24985692433441087,
+        "bias": -986.7458552631581
+      }
+    },
+    {
+      "horizon_days": 29,
+      "samples": 151,
+      "enhanced_assumption_based": {
+        "mae": 1987.621986754967,
+        "rmse": 2980.961589501522,
+        "mape": 0.24601202803543093,
+        "bias": -959.7047682119204
+      }
+    },
+    {
+      "horizon_days": 30,
+      "samples": 150,
+      "enhanced_assumption_based": {
+        "mae": 2022.3951333333334,
+        "rmse": 3025.61585944647,
+        "mape": 0.24526910056141712,
+        "bias": -931.7130000000001
+      }
+    },
+    {
+      "horizon_days": 31,
+      "samples": 149,
+      "enhanced_assumption_based": {
+        "mae": 2060.2784563758387,
+        "rmse": 3070.0168313559334,
+        "mape": 0.24442703497591592,
+        "bias": -902.8279865771816
+      }
+    },
+    {
+      "horizon_days": 32,
+      "samples": 148,
+      "enhanced_assumption_based": {
+        "mae": 2105.0493243243245,
+        "rmse": 3119.240603944917,
+        "mape": 0.24450293378728777,
+        "bias": -873.2217567567565
+      }
+    },
+    {
+      "horizon_days": 33,
+      "samples": 147,
+      "enhanced_assumption_based": {
+        "mae": 2163.3906122448984,
+        "rmse": 3173.6371080343315,
+        "mape": 0.24593186405356313,
+        "bias": -842.7923809523809
+      }
+    },
+    {
+      "horizon_days": 34,
+      "samples": 146,
+      "enhanced_assumption_based": {
+        "mae": 2230.1908219178085,
+        "rmse": 3230.030737197785,
+        "mape": 0.24792482891354978,
+        "bias": -811.2843835616441
+      }
+    },
+    {
+      "horizon_days": 35,
+      "samples": 145,
+      "enhanced_assumption_based": {
+        "mae": 2299.278896551724,
+        "rmse": 3283.0807168828906,
+        "mape": 0.2505552538094328,
+        "bias": -778.7046896551726
+      }
+    }
+  ]
+}

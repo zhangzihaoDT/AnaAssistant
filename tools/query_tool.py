@@ -1,6 +1,9 @@
 import contextlib
 import io
 import json
+import os
+import re
+import glob
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
@@ -35,11 +38,25 @@ class QueryTool:
             return []
         paths: list[Path] = []
         for raw in self.data_path_file.read_text(encoding="utf-8").splitlines():
-            value = raw.strip()
-            if not value:
+            line = raw.strip()
+            if not line or line.startswith("#"):
                 continue
-            normalized = value.replace("\\_", "_")
-            paths.append(Path(normalized))
+            value = line
+            if "：" in value:
+                value = value.split("：", 1)[1].strip()
+            elif ":" in value and not value.startswith(("/", "~")) and not re.match(r"^[A-Za-z]:[\\/]", value):
+                value = value.split(":", 1)[1].strip()
+
+            value = value.strip().strip("`").strip('"').strip("'")
+            value = os.path.expandvars(value)
+            value = value.replace("\\_", "_").replace("\\*", "*")
+
+            expanded = glob.glob(str(Path(value).expanduser()))
+            if expanded:
+                for p in sorted(expanded, key=lambda x: (len(x), x)):
+                    paths.append(Path(p))
+            else:
+                paths.append(Path(value).expanduser())
         return paths
 
     def _load_datasets(self) -> None:

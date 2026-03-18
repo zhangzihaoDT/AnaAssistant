@@ -1,0 +1,173 @@
+{
+  "framework": "Metrics Map + 统计分布 + 情景假设 = 销量预测",
+  "dataset": "/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv",
+  "as_of_date": "2026-03-17",
+  "samples": {
+    "recent_days": 30,
+    "history_days": 180
+  },
+  "metrics_map": {
+    "target_metric": "订单表.锁单数",
+    "traffic_metric": "下发线索转化率.下发线索数",
+    "conversion_metric": "下发线索转化率.下发线索当30日锁单率",
+    "identity": "lock_orders = leads × lock_rate"
+  },
+  "recent_performance": {
+    "daily_leads_mean": 10013.5,
+    "daily_lock_rate_mean": 0.012167,
+    "daily_lock_orders_mean": 138.47,
+    "lead_daily_delta": 320.720133,
+    "rate_daily_delta": 0.0
+  },
+  "distribution": {
+    "leads": {
+      "mean": 13463.95,
+      "std": 3794.820785,
+      "p10": 9602.7,
+      "p30": 12052.8,
+      "p50": 13314.0,
+      "p70": 15091.5,
+      "p90": 17701.5,
+      "zscore_recent_mean": -0.909252
+    },
+    "lock_rate": {
+      "mean": 0.014583,
+      "std": 0.007144,
+      "p10": 0.008,
+      "p30": 0.01,
+      "p50": 0.013,
+      "p70": 0.017,
+      "p90": 0.024,
+      "zscore_recent_mean": -0.338233
+    },
+    "lock_orders": {
+      "mean": 284.927778,
+      "std": 269.176832,
+      "p10": 91.9,
+      "p30": 128.0,
+      "p50": 219.5,
+      "p70": 312.0,
+      "p90": 571.1,
+      "zscore_recent_mean": -0.544107
+    }
+  },
+  "scenario_forecast": {
+    "forecast_days": 14,
+    "regime_quantile_based": {
+      "p10": {
+        "daily_leads": 5914.72,
+        "daily_lock_rate": 0.009429,
+        "daily_lock_orders": 56.82,
+        "period_lock_orders": 795.52
+      },
+      "p50": {
+        "daily_leads": 9414.25,
+        "daily_lock_rate": 0.016,
+        "daily_lock_orders": 152.76,
+        "period_lock_orders": 2138.66
+      },
+      "p90": {
+        "daily_leads": 15073.31,
+        "daily_lock_rate": 0.027214,
+        "daily_lock_orders": 414.26,
+        "period_lock_orders": 5799.61
+      }
+    },
+    "regime_quantile_bias_corrected": {
+      "p10": {
+        "daily_lock_orders_bias_corrected": 79.9,
+        "period_lock_orders_bias_corrected": 1118.64
+      },
+      "p50": {
+        "daily_lock_orders_bias_corrected": 214.81,
+        "period_lock_orders_bias_corrected": 3007.34
+      },
+      "p90": {
+        "daily_lock_orders_bias_corrected": 582.52,
+        "period_lock_orders_bias_corrected": 8155.28
+      }
+    },
+    "bayesian_calibration": {
+      "enabled": 1,
+      "method": "regime_quantile",
+      "future_days": 14,
+      "future_regime_days": {
+        "activity": 0,
+        "weekday": 10,
+        "weekend": 4
+      },
+      "regime_inputs": {
+        "activity": {
+          "leads": {
+            "n": 262,
+            "p10": 5945.6,
+            "p50": 10272.0,
+            "p90": 19394.9
+          },
+          "lock_rate": {
+            "n": 262,
+            "p10": 0.0071,
+            "p50": 0.018000000000000002,
+            "p90": 0.033
+          }
+        },
+        "weekday": {
+          "leads": {
+            "n": 390,
+            "p10": 3598.7000000000003,
+            "p50": 6967.0,
+            "p90": 12532.8
+          },
+          "lock_rate": {
+            "n": 390,
+            "p10": 0.008,
+            "p50": 0.013999999999999999,
+            "p90": 0.024100000000000024
+          }
+        },
+        "weekend": {
+          "leads": {
+            "n": 155,
+            "p10": 4408.4,
+            "p50": 8236.0,
+            "p90": 14128.199999999999
+          },
+          "lock_rate": {
+            "n": 155,
+            "p10": 0.013000000000000001,
+            "p50": 0.021,
+            "p90": 0.035
+          }
+        }
+      },
+      "regime_daily_lock_orders_reference": {
+        "activity": {
+          "p10": 42.21,
+          "p50": 184.9,
+          "p90": 640.03
+        },
+        "weekday": {
+          "p10": 28.79,
+          "p50": 97.54,
+          "p90": 302.04
+        },
+        "weekend": {
+          "p10": 57.31,
+          "p50": 172.96,
+          "p90": 494.49
+        }
+      }
+    },
+    "bias_correction": {
+      "regime_quantile_based": {
+        "enabled": 1,
+        "samples": 365,
+        "bias": -1460.0866575342466,
+        "mean_true": 3594.7013698630135,
+        "bias_rate": -0.40617745601212135,
+        "factor": 1.4061774560121214
+      }
+    }
+  },
+  "decision_summary": "截至 3/17；预计未来 14 天（bias 校正后）P50 约 3007.34，区间 [1118.64, 8155.28]。"
+}
