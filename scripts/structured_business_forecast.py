@@ -50,6 +50,7 @@ LOCK_RATE_CANDIDATES = [
 
 QUANTILE_KEYS = ["p10", "p50", "p90"]
 REGIME_KEYS = ["activity", "weekday", "weekend"]
+BOOTSTRAP_KEYS = [*QUANTILE_KEYS, "mode"]
 
 
 def _to_float(value: object) -> float | None:
@@ -154,12 +155,56 @@ def _summary_stats(series: pd.Series) -> dict[str, float]:
     return {
         "mean": round(float(series.mean()), 6),
         "std": round(_std_safe(series), 6),
+        "mode": round(_estimate_mode(series), 6),
         "p10": round(float(q.loc[0.1]), 6),
         "p30": round(float(q.loc[0.3]), 6),
         "p50": round(float(q.loc[0.5]), 6),
         "p70": round(float(q.loc[0.7]), 6),
         "p90": round(float(q.loc[0.9]), 6),
     }
+
+
+def _estimate_mode(series: pd.Series) -> float:
+    s = pd.Series(series).dropna().astype(float)
+    if len(s) == 0:
+        return 0.0
+
+    values = s.values
+    if np.all(np.isclose(values, values[0], atol=0.0)):
+        return float(values[0])
+
+    is_int_like = np.all(np.isclose(values, np.round(values), atol=1e-9))
+    if is_int_like:
+        vc = pd.Series(np.round(values).astype(int)).value_counts()
+        if len(vc) == 0:
+            return float(np.median(values))
+        top = vc.max()
+        candidates = vc[vc == top].index.to_numpy(dtype=float)
+        if candidates.size == 1:
+            return float(candidates[0])
+        med = float(np.median(values))
+        return float(candidates[np.argmin(np.abs(candidates - med))])
+
+    x = np.sort(values.astype(float))
+    return float(_half_sample_mode_sorted(x))
+
+
+def _half_sample_mode_sorted(sorted_values: np.ndarray) -> float:
+    n = int(sorted_values.size)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return float(sorted_values[0])
+    if n == 2:
+        return float((sorted_values[0] + sorted_values[1]) / 2.0)
+
+    k = (n + 1) // 2
+    widths = sorted_values[k - 1 :] - sorted_values[: n - k + 1]
+    start = int(np.argmin(widths))
+    window = sorted_values[start : start + k]
+    if window.size == n:
+        return float(np.median(sorted_values))
+    return float(_half_sample_mode_sorted(window))
 
 
 def _positive_daily_trend_delta(series: pd.Series) -> float:
@@ -218,7 +263,7 @@ def _compute_bias_correction(
         rate_daily_delta = _positive_daily_trend_delta(recent_df["lock_rate"])
         future_dates = pd.date_range(future_start, future_end, freq="D")
         _, q_forecast, _ = _regime_quantile_forecast(
-            history_df=past_df.copy(),
+            history_df=history_df.copy(),
             future_dates=future_dates,
             activity_ranges=activity_ranges,
             lead_daily_delta=lead_daily_delta,
@@ -265,10 +310,11 @@ def _load_activity_ranges(business_definition_json: Path) -> list[tuple[str, pd.
 def _segment_quantiles(series: pd.Series) -> dict[str, float | int]:
     s = pd.Series(series).dropna().astype(float)
     if len(s) == 0:
-        return {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0}
+        return {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0}
     q = s.quantile([0.1, 0.5, 0.9])
     return {
         "n": int(len(s)),
+        "mode": float(_estimate_mode(s)),
         "p10": float(q.loc[0.1]),
         "p50": float(q.loc[0.5]),
         "p90": float(q.loc[0.9]),
@@ -296,16 +342,16 @@ def _build_regime_inputs(
     if hist.empty:
         return {
             "activity": {
-                "leads": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
-                "lock_rate": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "leads": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "lock_rate": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
             },
             "weekday": {
-                "leads": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
-                "lock_rate": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "leads": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "lock_rate": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
             },
             "weekend": {
-                "leads": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
-                "lock_rate": {"n": 0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "leads": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "lock_rate": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
             },
         }
     all_part = hist[["leads", "lock_rate"]].copy()
@@ -373,6 +419,9 @@ def _regime_quantile_forecast(
             leads_q = float(regime_inputs[regime]["leads"][qk])
             rate_q = float(regime_inputs[regime]["lock_rate"][qk])
             regime_reference[regime][qk] = round(leads_q * rate_q, 2)
+        leads_m = float(regime_inputs[regime]["leads"]["mode"])
+        rate_m = float(regime_inputs[regime]["lock_rate"]["mode"])
+        regime_reference[regime]["mode"] = round(leads_m * rate_m, 2)
 
     calibration_meta = {
         "enabled": 1,
@@ -383,6 +432,105 @@ def _regime_quantile_forecast(
         "regime_daily_lock_orders_reference": regime_reference,
     }
     return calibration_meta, quantile_forecast, regime_reference
+
+
+def _regime_bootstrap_forecast(
+    history_df: pd.DataFrame,
+    future_dates: pd.DatetimeIndex,
+    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]],
+    lead_daily_delta: float,
+    rate_daily_delta: float,
+    sim_n: int = 8000,
+    seed: int = 202403,
+) -> dict[str, dict[str, float]]:
+    future_dates = pd.DatetimeIndex(future_dates)
+    days = int(len(future_dates))
+    if days <= 0:
+        return {
+            k: {"daily_leads": 0.0, "daily_lock_rate": 0.0, "daily_lock_orders": 0.0, "period_lock_orders": 0.0}
+            for k in BOOTSTRAP_KEYS
+        }
+
+    hist = history_df.copy()
+    labels = [_regime_label_for_date(pd.Timestamp(d), activity_ranges) for d in pd.DatetimeIndex(hist.index)]
+    hist["regime"] = labels
+    hist = hist.dropna(subset=["leads", "lock_rate"])
+    hist = hist[(hist["leads"] >= 0) & (hist["lock_rate"] >= 0)]
+    if hist.empty:
+        return {
+            k: {"daily_leads": 0.0, "daily_lock_rate": 0.0, "daily_lock_orders": 0.0, "period_lock_orders": 0.0}
+            for k in BOOTSTRAP_KEYS
+        }
+
+    hist = hist.astype({"leads": float, "lock_rate": float})
+    all_pairs = hist[["leads", "lock_rate"]].to_numpy(dtype=float)
+    pairs_by_regime: dict[str, np.ndarray] = {}
+    for regime in REGIME_KEYS:
+        part = hist[hist["regime"] == regime][["leads", "lock_rate"]].to_numpy(dtype=float)
+        pairs_by_regime[regime] = part if part.size else all_pairs
+
+    future_regimes = [_regime_label_for_date(pd.Timestamp(d), activity_ranges) for d in future_dates]
+    sim_n = int(max(1000, sim_n))
+    rng = np.random.default_rng(int(seed))
+
+    period_lock = np.zeros(sim_n, dtype=float)
+    leads_sum = np.zeros(sim_n, dtype=float)
+    rate_sum = np.zeros(sim_n, dtype=float)
+
+    for i in range(days):
+        regime = future_regimes[i]
+        pairs = pairs_by_regime.get(regime, all_pairs)
+        if pairs.size == 0:
+            continue
+        idx = rng.integers(0, pairs.shape[0], size=sim_n)
+        leads = pairs[idx, 0] + lead_daily_delta * i
+        rate = pairs[idx, 1] + rate_daily_delta * i
+        leads = np.maximum(leads, 0.0)
+        rate = np.maximum(rate, 0.0)
+        lock = leads * rate
+        period_lock += lock
+        leads_sum += leads
+        rate_sum += rate
+
+    daily_leads_arr = leads_sum / float(days)
+    daily_rate_arr = rate_sum / float(days)
+    daily_lock_arr = period_lock / float(days)
+
+    period_q10, period_q50, period_q90 = np.quantile(period_lock, [0.1, 0.5, 0.9])
+    leads_q10, leads_q50, leads_q90 = np.quantile(daily_leads_arr, [0.1, 0.5, 0.9])
+    rate_q10, rate_q50, rate_q90 = np.quantile(daily_rate_arr, [0.1, 0.5, 0.9])
+    lock_q10, lock_q50, lock_q90 = np.quantile(daily_lock_arr, [0.1, 0.5, 0.9])
+
+    period_mode = float(_estimate_mode(pd.Series(period_lock)))
+    leads_mode = float(_estimate_mode(pd.Series(daily_leads_arr)))
+    rate_mode = float(_estimate_mode(pd.Series(daily_rate_arr)))
+
+    return {
+        "p10": {
+            "daily_leads": round(float(leads_q10), 2),
+            "daily_lock_rate": round(float(rate_q10), 6),
+            "daily_lock_orders": round(float(lock_q10), 2),
+            "period_lock_orders": round(float(period_q10), 2),
+        },
+        "p50": {
+            "daily_leads": round(float(leads_q50), 2),
+            "daily_lock_rate": round(float(rate_q50), 6),
+            "daily_lock_orders": round(float(lock_q50), 2),
+            "period_lock_orders": round(float(period_q50), 2),
+        },
+        "p90": {
+            "daily_leads": round(float(leads_q90), 2),
+            "daily_lock_rate": round(float(rate_q90), 6),
+            "daily_lock_orders": round(float(lock_q90), 2),
+            "period_lock_orders": round(float(period_q90), 2),
+        },
+        "mode": {
+            "daily_leads": round(float(leads_mode), 2),
+            "daily_lock_rate": round(float(rate_mode), 6),
+            "daily_lock_orders": round(float(period_mode / float(days)), 2),
+            "period_lock_orders": round(float(period_mode), 2),
+        },
+    }
 
 
 def _parse_target_month(value: str) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -401,7 +549,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--as-of", default=None)
     parser.add_argument("--target-month", default=None)
     parser.add_argument("--lookback-recent", type=int, default=30)
-    parser.add_argument("--lookback-history", type=int, default=180)
+    parser.add_argument("--lookback-history", type=int, default=365)
     parser.add_argument("--forecast-days", type=int, default=28)
     parser.add_argument("--bias-eval-days", type=int, default=365)
     parser.add_argument("--output", default=None)
@@ -460,7 +608,14 @@ def main() -> None:
 
     if forecast_days > 0:
         bayes_calibration, regime_quantile_forecast, regime_reference = _regime_quantile_forecast(
-            history_df=full_series_df[full_series_df.index <= forecast_as_of].copy(),
+            history_df=history_df.copy(),
+            future_dates=future_dates,
+            activity_ranges=activity_ranges,
+            lead_daily_delta=lead_daily_delta,
+            rate_daily_delta=rate_daily_delta,
+        )
+        regime_bootstrap_forecast = _regime_bootstrap_forecast(
+            history_df=history_df.copy(),
             future_dates=future_dates,
             activity_ranges=activity_ranges,
             lead_daily_delta=lead_daily_delta,
@@ -481,6 +636,15 @@ def main() -> None:
                 "period_lock_orders_bias_corrected": round(float(v["period_lock_orders"]) * bias_factor, 2),
             }
             for qk, v in regime_quantile_forecast.items()
+        }
+        regime_bootstrap_bias_corrected = {
+            k: {
+                "daily_leads": float(v["daily_leads"]),
+                "daily_lock_rate": float(v["daily_lock_rate"]),
+                "daily_lock_orders_bias_corrected": round(float(v["daily_lock_orders"]) * bias_factor, 2),
+                "period_lock_orders_bias_corrected": round(float(v["period_lock_orders"]) * bias_factor, 2),
+            }
+            for k, v in regime_bootstrap_forecast.items()
         }
     else:
         regime_quantile_forecast = {k: {"daily_leads": 0.0, "daily_lock_rate": 0.0, "daily_lock_orders": 0.0, "period_lock_orders": 0.0} for k in QUANTILE_KEYS}
@@ -507,6 +671,19 @@ def main() -> None:
                 "period_lock_orders_bias_corrected": 0.0,
             }
             for qk in QUANTILE_KEYS
+        }
+        regime_bootstrap_forecast = {
+            k: {"daily_leads": 0.0, "daily_lock_rate": 0.0, "daily_lock_orders": 0.0, "period_lock_orders": 0.0}
+            for k in BOOTSTRAP_KEYS
+        }
+        regime_bootstrap_bias_corrected = {
+            k: {
+                "daily_leads": 0.0,
+                "daily_lock_rate": 0.0,
+                "daily_lock_orders_bias_corrected": 0.0,
+                "period_lock_orders_bias_corrected": 0.0,
+            }
+            for k in BOOTSTRAP_KEYS
         }
 
     result = {
@@ -555,6 +732,8 @@ def main() -> None:
             "forecast_days": int(forecast_days),
             "regime_quantile_based": regime_quantile_forecast,
             "regime_quantile_bias_corrected": regime_quantile_bias_corrected,
+            "regime_bootstrap": regime_bootstrap_forecast,
+            "regime_bootstrap_bias_corrected": regime_bootstrap_bias_corrected,
             "bayesian_calibration": bayes_calibration,
             "bias_correction": {
                 "regime_quantile_based": bias_regime,
@@ -594,7 +773,14 @@ def main() -> None:
 
         if remaining_days > 0:
             month_calibration, month_forecast_quantiles, month_regime_reference = _regime_quantile_forecast(
-                history_df=full_series_df[full_series_df.index <= as_of].copy(),
+                history_df=history_df.copy(),
+                future_dates=future_dates_month,
+                activity_ranges=activity_ranges,
+                lead_daily_delta=lead_daily_delta,
+                rate_daily_delta=rate_daily_delta,
+            )
+            month_bootstrap_forecast = _regime_bootstrap_forecast(
+                history_df=history_df.copy(),
                 future_dates=future_dates_month,
                 activity_ranges=activity_ranges,
                 lead_daily_delta=lead_daily_delta,
@@ -609,12 +795,14 @@ def main() -> None:
                 activity_ranges=activity_ranges,
             )
             month_bias_factor = float(month_bias["factor"])
-            remaining_p10 = float(month_forecast_quantiles["p10"]["period_lock_orders"])
-            remaining_p50 = float(month_forecast_quantiles["p50"]["period_lock_orders"])
-            remaining_p90 = float(month_forecast_quantiles["p90"]["period_lock_orders"])
+            remaining_p10 = float(month_bootstrap_forecast["p10"]["period_lock_orders"])
+            remaining_p50 = float(month_bootstrap_forecast["p50"]["period_lock_orders"])
+            remaining_p90 = float(month_bootstrap_forecast["p90"]["period_lock_orders"])
+            remaining_mode = float(month_bootstrap_forecast["mode"]["period_lock_orders"])
             remaining_bc_p10 = remaining_p10 * month_bias_factor
             remaining_bc_p50 = remaining_p50 * month_bias_factor
             remaining_bc_p90 = remaining_p90 * month_bias_factor
+            remaining_bc_mode = remaining_mode * month_bias_factor
         else:
             month_calibration = {
                 "enabled": 0,
@@ -633,20 +821,24 @@ def main() -> None:
                 "bias_rate": 0.0,
                 "factor": 1.0,
             }
-            remaining_p10 = remaining_p50 = remaining_p90 = 0.0
-            remaining_bc_p10 = remaining_bc_p50 = remaining_bc_p90 = 0.0
+            remaining_p10 = remaining_p50 = remaining_p90 = remaining_mode = 0.0
+            remaining_bc_p10 = remaining_bc_p50 = remaining_bc_p90 = remaining_bc_mode = 0.0
 
         month_totals = {
             "actual_lock_orders_to_date": round(float(actual_sum), 2),
+            "remaining_lock_orders_mode": round(float(remaining_mode), 2),
             "remaining_lock_orders_p10": round(float(remaining_p10), 2),
             "remaining_lock_orders_p50": round(float(remaining_p50), 2),
             "remaining_lock_orders_p90": round(float(remaining_p90), 2),
+            "remaining_lock_orders_bias_corrected_mode": round(float(remaining_bc_mode), 2),
             "remaining_lock_orders_bias_corrected_p10": round(float(remaining_bc_p10), 2),
             "remaining_lock_orders_bias_corrected_p50": round(float(remaining_bc_p50), 2),
             "remaining_lock_orders_bias_corrected_p90": round(float(remaining_bc_p90), 2),
+            "month_lock_orders_mode": round(float(actual_sum + remaining_mode), 2),
             "month_lock_orders_p10": round(float(actual_sum + remaining_p10), 2),
             "month_lock_orders_p50": round(float(actual_sum + remaining_p50), 2),
             "month_lock_orders_p90": round(float(actual_sum + remaining_p90), 2),
+            "month_lock_orders_bias_corrected_mode": round(float(actual_sum + remaining_bc_mode), 2),
             "month_lock_orders_bias_corrected_p10": round(float(actual_sum + remaining_bc_p10), 2),
             "month_lock_orders_bias_corrected_p50": round(float(actual_sum + remaining_bc_p50), 2),
             "month_lock_orders_bias_corrected_p90": round(float(actual_sum + remaining_bc_p90), 2),
@@ -656,7 +848,8 @@ def main() -> None:
         month_label = target_month_for_summary.split("-")[1].lstrip("0")
         decision_summary = (
             f"截至 {pd.Timestamp(actual_end).month}/{pd.Timestamp(actual_end).day} 已锁单 {float(actual_sum):g}；"
-            f"预计 {month_label} 月整月（bias 校正后）P50 约 {float(month_totals['month_lock_orders_bias_corrected_p50']):.2f}，"
+            f"预计 {month_label} 月整月（bias 校正后）最可能值约 {float(month_totals['month_lock_orders_bias_corrected_mode']):.2f}，"
+            f"P50 约 {float(month_totals['month_lock_orders_bias_corrected_p50']):.2f}，"
             f"区间 [{float(month_totals['month_lock_orders_bias_corrected_p10']):.2f}, {float(month_totals['month_lock_orders_bias_corrected_p90']):.2f}]。"
         )
 
@@ -679,12 +872,14 @@ def main() -> None:
         }
         result["decision_summary"] = decision_summary
     else:
-        p10 = float(regime_quantile_bias_corrected["p10"]["period_lock_orders_bias_corrected"])
-        p50 = float(regime_quantile_bias_corrected["p50"]["period_lock_orders_bias_corrected"])
-        p90 = float(regime_quantile_bias_corrected["p90"]["period_lock_orders_bias_corrected"])
+        mode = float(regime_bootstrap_bias_corrected["mode"]["period_lock_orders_bias_corrected"])
+        p10 = float(regime_bootstrap_bias_corrected["p10"]["period_lock_orders_bias_corrected"])
+        p50 = float(regime_bootstrap_bias_corrected["p50"]["period_lock_orders_bias_corrected"])
+        p90 = float(regime_bootstrap_bias_corrected["p90"]["period_lock_orders_bias_corrected"])
         result["decision_summary"] = (
             f"截至 {pd.Timestamp(forecast_as_of).month}/{pd.Timestamp(forecast_as_of).day}；"
-            f"预计未来 {int(forecast_days)} 天（bias 校正后）P50 约 {p50:.2f}，区间 [{p10:.2f}, {p90:.2f}]。"
+            f"预计未来 {int(forecast_days)} 天（bias 校正后）最可能值约 {mode:.2f}，"
+            f"P50 约 {p50:.2f}，区间 [{p10:.2f}, {p90:.2f}]。"
         )
 
     content = json.dumps(result, ensure_ascii=False, indent=2)
