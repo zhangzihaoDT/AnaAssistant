@@ -49,7 +49,7 @@ LOCK_RATE_CANDIDATES = [
 ]
 
 QUANTILE_KEYS = ["p10", "p50", "p90"]
-REGIME_KEYS = ["activity", "weekday", "weekend"]
+REGIME_KEYS = ["activity_high_eff", "activity_low_eff", "weekday", "weekend"]
 BOOTSTRAP_KEYS = [*QUANTILE_KEYS, "mode"]
 
 
@@ -225,7 +225,7 @@ def _compute_bias_correction(
     lookback_recent: int,
     lookback_history: int,
     eval_days: int,
-    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]],
+    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]],
 ) -> dict[str, float | int]:
     if eval_days <= 0:
         return {"enabled": 0, "samples": 0, "bias": 0.0, "mean_true": 0.0, "bias_rate": 0.0, "factor": 1.0}
@@ -294,16 +294,26 @@ def _compute_bias_correction(
     }
 
 
-def _load_activity_ranges(business_definition_json: Path) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
+def _load_activity_ranges(
+    business_definition_json: Path,
+) -> list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]]:
     raw = json.loads(business_definition_json.read_text(encoding="utf-8"))
     periods = raw.get("time_periods", {})
-    out: list[tuple[str, pd.Timestamp, pd.Timestamp]] = []
+    out: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]] = []
     for name, p in periods.items():
         start = pd.to_datetime(p.get("start"), errors="coerce")
+        end = pd.to_datetime(p.get("end"), errors="coerce")
         finish = pd.to_datetime(p.get("finish") or p.get("end"), errors="coerce")
-        if pd.isna(start) or pd.isna(finish):
+        if pd.isna(start) or pd.isna(end) or pd.isna(finish):
             continue
-        out.append((str(name), pd.Timestamp(start).normalize(), pd.Timestamp(finish).normalize()))
+        out.append(
+            (
+                str(name),
+                pd.Timestamp(start).normalize(),
+                pd.Timestamp(end).normalize(),
+                pd.Timestamp(finish).normalize(),
+            )
+        )
     return out
 
 
@@ -321,18 +331,38 @@ def _segment_quantiles(series: pd.Series) -> dict[str, float | int]:
     }
 
 
-def _regime_label_for_date(d: pd.Timestamp, activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]]) -> str:
+def _regime_label_for_date(
+    d: pd.Timestamp,
+    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]],
+) -> str:
     dn = pd.Timestamp(d).normalize()
-    for _, s, e in activity_ranges:
-        if s <= dn <= e:
-            return "activity"
+    in_activity = False
+    for _, s, e, f in activity_ranges:
+        if not (s <= dn <= f):
+            continue
+        in_activity = True
+        special_start = s
+        special_start_end = s + pd.Timedelta(days=2)
+        special_end_start = e - pd.Timedelta(days=2)
+        special_end_end = e
+        special_finish_start = f - pd.Timedelta(days=2)
+        special_finish_end = f
+        is_special = (
+            (special_start <= dn <= special_start_end)
+            or (special_end_start <= dn <= special_end_end)
+            or (special_finish_start <= dn <= special_finish_end)
+        )
+        if dn.weekday() >= 5 or is_special:
+            return "activity_high_eff"
+    if in_activity:
+        return "activity_low_eff"
     if dn.weekday() >= 5:
         return "weekend"
     return "weekday"
 
 
 def _build_regime_inputs(
-    history_df: pd.DataFrame, activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]]
+    history_df: pd.DataFrame, activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]]
 ) -> dict[str, dict[str, dict[str, float | int]]]:
     hist = history_df.copy()
     labels = [_regime_label_for_date(pd.Timestamp(d), activity_ranges) for d in pd.DatetimeIndex(hist.index)]
@@ -341,7 +371,11 @@ def _build_regime_inputs(
     hist = hist[(hist["leads"] >= 0) & (hist["lock_rate"] >= 0)]
     if hist.empty:
         return {
-            "activity": {
+            "activity_high_eff": {
+                "leads": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+                "lock_rate": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
+            },
+            "activity_low_eff": {
                 "leads": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
                 "lock_rate": {"n": 0, "mode": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0},
             },
@@ -370,13 +404,13 @@ def _build_regime_inputs(
 def _regime_quantile_forecast(
     history_df: pd.DataFrame,
     future_dates: pd.DatetimeIndex,
-    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]],
+    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]],
     lead_daily_delta: float,
     rate_daily_delta: float,
 ) -> tuple[dict[str, object], dict[str, dict[str, float]], dict[str, dict[str, float]]]:
     regime_inputs = _build_regime_inputs(history_df=history_df, activity_ranges=activity_ranges)
     future_regimes = [_regime_label_for_date(pd.Timestamp(d), activity_ranges) for d in pd.DatetimeIndex(future_dates)]
-    regime_counts: dict[str, int] = {"activity": 0, "weekday": 0, "weekend": 0}
+    regime_counts: dict[str, int] = {k: 0 for k in REGIME_KEYS}
     for r in future_regimes:
         regime_counts[r] = regime_counts.get(r, 0) + 1
 
@@ -437,7 +471,7 @@ def _regime_quantile_forecast(
 def _regime_bootstrap_forecast(
     history_df: pd.DataFrame,
     future_dates: pd.DatetimeIndex,
-    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp]],
+    activity_ranges: list[tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]],
     lead_daily_delta: float,
     rate_daily_delta: float,
     sim_n: int = 8000,

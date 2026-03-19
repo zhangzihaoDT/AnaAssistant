@@ -26,6 +26,44 @@ def _safe_read_csv(file_path: Path) -> pd.DataFrame:
     return pd.read_csv(file_path, low_memory=False)
 
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _try_parse_datetime_series(series: pd.Series) -> pd.Series | None:
+    s = series
+    if not isinstance(s, pd.Series):
+        return None
+    if s.empty:
+        return None
+
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s
+
+    raw = s.astype(str)
+    parsed_cn = pd.to_datetime(raw, errors="coerce", format="%Y年%m月%d日")
+    if float(parsed_cn.notna().mean()) >= 0.8:
+        return parsed_cn
+
+    parsed_any = pd.to_datetime(raw, errors="coerce")
+    if float(parsed_any.notna().mean()) >= 0.8:
+        return parsed_any
+
+    return None
+
+
+def _try_parse_datetime_value(value: object) -> pd.Timestamp | None:
+    if value is None:
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value
+    if isinstance(value, str) and _ISO_DATE_RE.match(value.strip()):
+        try:
+            return pd.to_datetime(value.strip(), errors="raise")
+        except Exception:
+            return None
+    return None
+
+
 class QueryTool:
     def __init__(self, data_path_file: str, schema_dir: str):
         self.data_path_file = Path(data_path_file)
@@ -139,6 +177,22 @@ class QueryTool:
             value = f.get("value")
             if field not in df.columns:
                 continue
+
+            if op in {">", "<", ">=", "<="}:
+                parsed_series = _try_parse_datetime_series(df[field])
+                parsed_value = _try_parse_datetime_value(value)
+                if parsed_series is not None and parsed_value is not None:
+                    s = parsed_series
+                    v = parsed_value
+                    if op == ">":
+                        df = df[s > v]
+                    elif op == "<":
+                        df = df[s < v]
+                    elif op == ">=":
+                        df = df[s >= v]
+                    elif op == "<=":
+                        df = df[s <= v]
+                    continue
 
             if op == "==":
                 df = df[df[field] == value]
