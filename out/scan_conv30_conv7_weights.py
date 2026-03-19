@@ -47,6 +47,44 @@ def pct_rank_strict(series: pd.Series) -> pd.Series:
     return out
 
 
+def scan_volume(
+    df: pd.DataFrame,
+    w_lock_min: float = 0.40,
+    w_lock_max: float = 0.80,
+    w_store_max: float = 0.30,
+    step: float = 0.05,
+    store_penalty: float = 0.20,
+) -> pd.DataFrame:
+    corr_ls = spearman_like(df["p_leads"], df["p_leads_store"])
+    rows: list[dict[str, float]] = []
+    for w_lock in np.round(np.arange(w_lock_min, w_lock_max + 1e-9, step), 4):
+        for w_store in np.round(np.arange(0.0, w_store_max + 1e-9, step), 4):
+            w_leads = 1.0 - float(w_lock) - float(w_store)
+            if w_leads < -1e-9:
+                continue
+            score = (df["p_lock_cnt"] * w_lock) + (df["p_leads"] * w_leads) + (df["p_leads_store"] * w_store)
+            corr_lock = spearman_like(score, df["p_lock_cnt"])
+            corr_leads = spearman_like(score, df["p_leads"])
+            corr_store = spearman_like(score, df["p_leads_store"])
+
+            obj = (0.6 * corr_lock) + (0.3 * corr_leads) + (0.1 * corr_store) - (store_penalty * float(w_store) * abs(float(corr_ls)))
+            rows.append(
+                {
+                    "w_lock_cnt": float(w_lock),
+                    "w_leads": float(round(w_leads, 4)),
+                    "w_leads_store": float(w_store),
+                    "corr_lock": float(round(corr_lock, 4)),
+                    "corr_leads": float(round(corr_leads, 4)),
+                    "corr_store": float(round(corr_store, 4)),
+                    "corr_leads_store": float(round(corr_ls, 4)),
+                    "obj": float(round(obj, 4)),
+                }
+            )
+
+    out = pd.DataFrame(rows).sort_values(["obj", "corr_lock", "w_lock_cnt"], ascending=[False, False, False]).reset_index(drop=True)
+    return out
+
+
 def scan_conv30(
     df: pd.DataFrame,
     short_ratio: dict[str, float],
@@ -168,12 +206,15 @@ def main() -> None:
     history_matrix = mod._read_daily_matrix_csv(history_csv)
     history_df = mod._history_from_matrix(history_matrix, activity_ranges)
 
-    cols = ["store_lock0_rate", "td0_rate", "conv7", "conv30"]
-    df = history_df[["date", "regime", *cols]].copy()
-    for c in cols:
+    conv_cols = ["store_lock0_rate", "td0_rate", "conv7", "conv30"]
+    df = history_df[["date", "regime", "lock_cnt", "leads", "leads_store", *conv_cols]].copy()
+    for c in ["lock_cnt", "leads", "leads_store", *conv_cols]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=["date"])
-    for c in cols:
+    df["p_lock_cnt"] = pct_rank_strict(df["lock_cnt"])
+    df["p_leads"] = pct_rank_strict(df["leads"])
+    df["p_leads_store"] = pct_rank_strict(df["leads_store"])
+    for c in conv_cols:
         df["p_" + c] = pct_rank_strict(df[c])
 
     sample_path = repo / "out" / "index_summary_2025-08-15.json"
@@ -195,9 +236,13 @@ def main() -> None:
     level_short = {"store_lock0_rate": 0.6, "td0_rate": 0.4}
     end_short = {"store_lock0_rate": 0.7, "td0_rate": 0.3}
 
+    vol_out = scan_volume(df)
     level_out = scan_conv30(df, level_short, sample_p)
     end_out = scan_conv30(df, end_short, sample_p)
     conv7_out = scan_conv7(df, level_short, sample_p)
+
+    print("=== TOP 10 (Volume weights) ===")
+    print(vol_out.head(10).to_string(index=False))
 
     print("=== TOP 10 (level, lag>30) ===")
     print(level_out.head(10).to_string(index=False))
@@ -205,6 +250,9 @@ def main() -> None:
     print(end_out.head(10).to_string(index=False))
     print("\n=== TOP 10 (lag>7, conv7 only) ===")
     print(conv7_out.head(10).to_string(index=False))
+
+    print("\n=== SUGGESTED (Volume) ===")
+    print(vol_out.head(1)[["w_lock_cnt", "w_leads", "w_leads_store", "obj", "corr_lock", "corr_leads", "corr_store", "corr_leads_store"]].to_string(index=False))
 
     print("\n=== SUGGESTED (level) ===")
     print(level_out.head(1)[["w_store_lock0", "w_td0", "w_conv7", "w_conv30", "obj", "corr_p30", "corr_p7", "corr_short", "sample_score"]].to_string(index=False))

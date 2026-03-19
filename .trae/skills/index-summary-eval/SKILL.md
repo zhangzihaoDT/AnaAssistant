@@ -59,7 +59,7 @@ python .trae/skills/index-summary-eval/scripts/evaluation_engine.py \
 ## 评估口径
 
 - 因子压缩：
-  - `Volume = 0.6*P(lock_cnt) + 0.25*P(leads) + 0.15*P(leads_store)`
+  - `Volume = 0.6*P(lock_cnt) + 0.4*P(leads)`
   - `Conversion` 依据评估日期距今天的滞后动态切换：
     - `lag <= 7d`：`Conversion(level) = 0.6*P(store_lock0_rate) + 0.4*P(td0_rate)`；`Conversion(end_state) = 0.7*P(store_lock0_rate) + 0.3*P(td0_rate)`
     - `7d < lag <= 30d`：加入 `P(conv7)`（下发线索当7日锁单率）

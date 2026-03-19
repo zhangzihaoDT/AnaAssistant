@@ -241,8 +241,7 @@ def _scores_for_history_row(
     volume_score = _weighted_score(
         [
             (_percentile(lock_cnt, history_df["lock_cnt"]), 0.6),
-            (_percentile(leads, history_df["leads"]), 0.25),
-            (_percentile(leads_store, history_df["leads_store"]), 0.15),
+            (_percentile(leads, history_df["leads"]), 0.4),
         ]
     )
 
@@ -560,9 +559,8 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
 
     global_lock_p = _percentile(lock_cnt, history_df["lock_cnt"])
     global_leads_p = _percentile(leads, history_df["leads"])
-    global_leads_store_p = _percentile(leads_store, history_df["leads_store"])
 
-    volume_score = _weighted_score([(global_lock_p, 0.6), (global_leads_p, 0.25), (global_leads_store_p, 0.15)])
+    volume_score = _weighted_score([(global_lock_p, 0.6), (global_leads_p, 0.4)])
     as_of = pd.Timestamp.today().normalize()
     lag_days = None if date is None else int((as_of - pd.Timestamp(date).normalize()).days)
     conversion_score = _conversion_score(conv_values, history_df, _conversion_weights_for_lag(lag_days, mode="level"))
@@ -591,8 +589,7 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
             subset = history_df
         rp_lock = _percentile(lock_cnt, subset["lock_cnt"])
         rp_leads = _percentile(leads, subset["leads"])
-        rp_leads_store = _percentile(leads_store, subset["leads_store"])
-        rp_volume = _weighted_score([(rp_lock, 0.6), (rp_leads, 0.25), (rp_leads_store, 0.15)])
+        rp_volume = _weighted_score([(rp_lock, 0.6), (rp_leads, 0.4)])
         rp_conv = _conversion_score(conv_values, subset, _conversion_weights_for_lag(lag_days, mode="level"))
         regime_eval[regime] = {
             "Volume": _safe_round(rp_volume),
