@@ -7,12 +7,12 @@ import pandas as pd
 
 
 REGIME_KEYS = ["activity_high_eff", "activity_low_eff", "weekday", "weekend"]
-LEVEL_CONVERSION_WEIGHTS: dict[str, float] = {
+BASE_LEVEL_CONVERSION_WEIGHTS: dict[str, float] = {
     "store_lock0_rate": 0.6,
     "td0_rate": 0.4,
 }
 
-END_CONVERSION_WEIGHTS: dict[str, float] = {
+BASE_END_CONVERSION_WEIGHTS: dict[str, float] = {
     "store_lock0_rate": 0.7,
     "td0_rate": 0.3,
 }
@@ -132,6 +132,43 @@ def _conversion_score(
     return _weighted_score(parts)
 
 
+def _conversion_weights_for_lag(lag_days: int | None, mode: str) -> dict[str, float]:
+    mode = str(mode or "level").strip().lower()
+    lag = None if lag_days is None else int(lag_days)
+    if lag is None:
+        return BASE_END_CONVERSION_WEIGHTS if mode == "end" else BASE_LEVEL_CONVERSION_WEIGHTS
+
+    if lag > 30:
+        if mode == "end":
+            return {
+                "store_lock0_rate": 0.119,
+                "td0_rate": 0.051,
+                "conv7": 0.13,
+                "conv30": 0.7,
+            }
+        return {
+            "store_lock0_rate": 0.102,
+            "td0_rate": 0.068,
+            "conv7": 0.13,
+            "conv30": 0.7,
+        }
+
+    if lag > 7:
+        if mode == "end":
+            return {
+                "store_lock0_rate": 0.6,
+                "td0_rate": 0.15,
+                "conv7": 0.25,
+            }
+        return {
+            "store_lock0_rate": 0.55,
+            "td0_rate": 0.25,
+            "conv7": 0.2,
+        }
+
+    return BASE_END_CONVERSION_WEIGHTS if mode == "end" else BASE_LEVEL_CONVERSION_WEIGHTS
+
+
 def _structure_scores(
     values: dict[str, float | None],
     history_df: pd.DataFrame,
@@ -180,13 +217,19 @@ def _weighted_distance(
     return float((num / denom) ** 0.5)
 
 
-def _scores_for_history_row(hist_row: pd.Series, history_df: pd.DataFrame) -> dict[str, float | None]:
+def _scores_for_history_row(
+    hist_row: pd.Series,
+    history_df: pd.DataFrame,
+    conversion_weights: dict[str, float],
+) -> dict[str, float | None]:
     lock_cnt = _to_float(hist_row.get("lock_cnt"))
     leads = _to_float(hist_row.get("leads"))
     leads_store = _to_float(hist_row.get("leads_store"))
 
     store_lock0_rate = _to_rate(hist_row.get("store_lock0_rate"))
     td0_rate = _to_rate(hist_row.get("td0_rate"))
+    conv7 = _to_rate(hist_row.get("conv7"))
+    conv30 = _to_rate(hist_row.get("conv30"))
 
     store_share = _to_rate(hist_row.get("store_share"))
     live_share = _to_rate(hist_row.get("live_share"))
@@ -204,9 +247,9 @@ def _scores_for_history_row(hist_row: pd.Series, history_df: pd.DataFrame) -> di
     )
 
     conversion_score = _conversion_score(
-        {"store_lock0_rate": store_lock0_rate, "td0_rate": td0_rate},
+        {"store_lock0_rate": store_lock0_rate, "td0_rate": td0_rate, "conv7": conv7, "conv30": conv30},
         history_df,
-        LEVEL_CONVERSION_WEIGHTS,
+        conversion_weights,
     )
 
     structure = _structure_scores(
@@ -232,6 +275,7 @@ def _find_peer_days(
     target_scores: dict[str, float | None],
     history_df: pd.DataFrame,
     exclude_date: str | None,
+    conversion_weights: dict[str, float],
     top_k: int = 3,
 ) -> list[dict[str, object]]:
     weights = {"Volume": 1.0, "Conversion": 1.0, "LeadQuality": 0.6, "CRConcentration": 0.4}
@@ -244,7 +288,7 @@ def _find_peer_days(
             d_str = str(d) if d is not None else ""
         if exclude_date and d_str == exclude_date:
             continue
-        cand_scores = _scores_for_history_row(r, history_df)
+        cand_scores = _scores_for_history_row(r, history_df, conversion_weights=conversion_weights)
         dist = _weighted_distance(target_scores, cand_scores, weights)
         if dist is None:
             continue
@@ -387,6 +431,8 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
         leads_store_raw = metric_map.get("下发线索转化率.下发线索数 (门店)", [None] * len(columns))
         store_lock0_rate_raw = metric_map.get("下发线索转化率.下发 (门店)线索当日锁单率", [None] * len(columns))
         td0_rate_raw = metric_map.get("下发线索转化率.下发线索当日试驾率", [None] * len(columns))
+        conv7_raw = metric_map.get("下发线索转化率.下发线索当7日锁单率", [None] * len(columns))
+        conv30_raw = metric_map.get("下发线索转化率.下发线索当30日锁单率", [None] * len(columns))
         store_share_raw = metric_map.get("下发线索转化率.门店线索占比", [None] * len(columns))
         leads_live_raw = metric_map.get("下发线索转化率.下发线索数（直播）", [None] * len(columns))
         leads_platform_raw = metric_map.get("下发线索转化率.下发线索数（平台)", [None] * len(columns))
@@ -397,6 +443,8 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
         leads_store_value = leads_store_raw[idx] if idx < len(leads_store_raw) else None
         store_lock0_rate_value = store_lock0_rate_raw[idx] if idx < len(store_lock0_rate_raw) else None
         td0_rate_value = td0_rate_raw[idx] if idx < len(td0_rate_raw) else None
+        conv7_value = conv7_raw[idx] if idx < len(conv7_raw) else None
+        conv30_value = conv30_raw[idx] if idx < len(conv30_raw) else None
         store_share_value = store_share_raw[idx] if idx < len(store_share_raw) else None
         leads_live_value = leads_live_raw[idx] if idx < len(leads_live_raw) else None
         leads_platform_value = leads_platform_raw[idx] if idx < len(leads_platform_raw) else None
@@ -410,6 +458,8 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
                 "leads_store": _to_float(leads_store_value),
                 "store_lock0_rate": _to_rate(store_lock0_rate_value),
                 "td0_rate": _to_rate(td0_rate_value),
+                "conv7": _to_rate(conv7_value),
+                "conv30": _to_rate(conv30_value),
                 "store_share": _to_rate(store_share_value),
                 "leads_live": _to_float(leads_live_value),
                 "leads_platform": _to_float(leads_platform_value),
@@ -430,6 +480,8 @@ def _row_from_day_json(day_obj: dict[str, object]) -> dict[str, object]:
         "leads_store": _to_float((assign or {}).get("下发线索数 (门店)")),
         "store_lock0_rate": _to_rate((assign or {}).get("下发 (门店)线索当日锁单率")),
         "td0_rate": _to_rate((assign or {}).get("下发线索当日试驾率")),
+        "conv7": _to_rate((assign or {}).get("下发线索当7日锁单率")),
+        "conv30": _to_rate((assign or {}).get("下发线索当30日锁单率")),
         "store_share": _to_rate((assign or {}).get("门店线索占比")),
         "leads_live": _to_float((assign or {}).get("下发线索数（直播）")),
         "leads_platform": _to_float((assign or {}).get("下发线索数（平台)")),
@@ -450,6 +502,8 @@ def _history_from_matrix(matrix: dict[str, object], activity_ranges: list[tuple[
                 "leads_store",
                 "store_lock0_rate",
                 "td0_rate",
+                "conv7",
+                "conv30",
                 "store_share",
                 "leads_live",
                 "leads_platform",
@@ -466,6 +520,8 @@ def _history_from_matrix(matrix: dict[str, object], activity_ranges: list[tuple[
     df["leads_store"] = pd.to_numeric(df["leads_store"], errors="coerce")
     df["store_lock0_rate"] = pd.to_numeric(df["store_lock0_rate"], errors="coerce")
     df["td0_rate"] = pd.to_numeric(df["td0_rate"], errors="coerce")
+    df["conv7"] = pd.to_numeric(df.get("conv7"), errors="coerce")
+    df["conv30"] = pd.to_numeric(df.get("conv30"), errors="coerce")
     df["store_share"] = pd.to_numeric(df.get("store_share"), errors="coerce")
     df["leads_live"] = pd.to_numeric(df.get("leads_live"), errors="coerce")
     df["leads_platform"] = pd.to_numeric(df.get("leads_platform"), errors="coerce")
@@ -485,6 +541,8 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
     leads_store = _to_float(row.get("leads_store"))
     store_lock0_rate = _to_rate(row.get("store_lock0_rate"))
     td0_rate = _to_rate(row.get("td0_rate"))
+    conv7 = _to_rate(row.get("conv7"))
+    conv30 = _to_rate(row.get("conv30"))
     store_share = _to_rate(row.get("store_share"))
     leads_live = _to_float(row.get("leads_live"))
     leads_platform = _to_float(row.get("leads_platform"))
@@ -496,6 +554,8 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
     conv_values: dict[str, float | None] = {
         "store_lock0_rate": store_lock0_rate,
         "td0_rate": td0_rate,
+        "conv7": conv7,
+        "conv30": conv30,
     }
 
     global_lock_p = _percentile(lock_cnt, history_df["lock_cnt"])
@@ -503,7 +563,9 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
     global_leads_store_p = _percentile(leads_store, history_df["leads_store"])
 
     volume_score = _weighted_score([(global_lock_p, 0.6), (global_leads_p, 0.25), (global_leads_store_p, 0.15)])
-    conversion_score = _conversion_score(conv_values, history_df, LEVEL_CONVERSION_WEIGHTS)
+    as_of = pd.Timestamp.today().normalize()
+    lag_days = None if date is None else int((as_of - pd.Timestamp(date).normalize()).days)
+    conversion_score = _conversion_score(conv_values, history_df, _conversion_weights_for_lag(lag_days, mode="level"))
     current_regime = _regime_label_for_date(date, activity_ranges) if date is not None else "weekday"
 
     structure_scores = _structure_scores(
@@ -531,7 +593,7 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
         rp_leads = _percentile(leads, subset["leads"])
         rp_leads_store = _percentile(leads_store, subset["leads_store"])
         rp_volume = _weighted_score([(rp_lock, 0.6), (rp_leads, 0.25), (rp_leads_store, 0.15)])
-        rp_conv = _conversion_score(conv_values, subset, LEVEL_CONVERSION_WEIGHTS)
+        rp_conv = _conversion_score(conv_values, subset, _conversion_weights_for_lag(lag_days, mode="level"))
         regime_eval[regime] = {
             "Volume": _safe_round(rp_volume),
             "Conversion": _safe_round(rp_conv),
@@ -568,6 +630,7 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
             },
             history_df,
             exclude_date=(None if date is None else str(date.date())),
+            conversion_weights=_conversion_weights_for_lag(lag_days, mode="level"),
         ),
         "diagnosis": diagnosis,
         "raw_metrics": {
@@ -576,6 +639,8 @@ def _evaluate_row(row: dict[str, object], history_df: pd.DataFrame, activity_ran
             "leads_store": leads_store,
             "store_lock0_rate": _safe_round(store_lock0_rate),
             "td0_rate": _safe_round(td0_rate),
+            "conv7": _safe_round(conv7),
+            "conv30": _safe_round(conv30),
             "store_share": _safe_round(store_share),
             "live_share": _safe_round(live_share),
             "platform_share": _safe_round(platform_share),
@@ -636,11 +701,16 @@ def _evaluate_interval(rows: list[dict[str, object]], history_df: pd.DataFrame, 
     last3_rows = rows[-3:]
     end_conv_values: list[float | None] = []
     for r in last3_rows:
+        d = _parse_date(r.get("date"))
+        as_of = pd.Timestamp.today().normalize()
+        lag_days = None if d is None else int((as_of - pd.Timestamp(d).normalize()).days)
         conv_values = {
             "store_lock0_rate": _to_rate(r.get("store_lock0_rate")),
             "td0_rate": _to_rate(r.get("td0_rate")),
+            "conv7": _to_rate(r.get("conv7")),
+            "conv30": _to_rate(r.get("conv30")),
         }
-        end_conv_values.append(_conversion_score(conv_values, history_df, END_CONVERSION_WEIGHTS))
+        end_conv_values.append(_conversion_score(conv_values, history_df, _conversion_weights_for_lag(lag_days, mode="end")))
     end_conv = _mean_or_none(end_conv_values)
 
     end_lq = _mean_or_none([v for v in day_lq[-3:]])
@@ -703,6 +773,12 @@ def _evaluate_interval(rows: list[dict[str, object]], history_df: pd.DataFrame, 
             },
             history_df,
             exclude_date=str(day_evals[-1].get("date") or ""),
+            conversion_weights=_conversion_weights_for_lag(
+                None
+                if _parse_date(day_evals[-1].get("date")) is None
+                else int((pd.Timestamp.today().normalize() - pd.Timestamp(_parse_date(day_evals[-1].get("date"))).normalize()).days),
+                mode="end",
+            ),
         ),
         "level": {
             "Volume": _safe_round(level_volume),

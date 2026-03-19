@@ -50,6 +50,8 @@ python .trae/skills/index-summary-eval/scripts/evaluation_engine.py \
   - `下发线索转化率.下发线索数（平台)`
   - `下发线索转化率.下发 (门店)线索当日锁单率`
   - `下发线索转化率.下发线索当日试驾率`
+  - 若评估日期距今天 >7 天：需要 `下发线索转化率.下发线索当7日锁单率`
+  - 若评估日期距今天 >30 天：需要 `下发线索转化率.下发线索当30日锁单率`
 - 区间输入至少满足其一：
   - `days`（每天一条 index_summary 单日结构）
   - `daily_metrics_matrix`（矩阵结构）
@@ -58,8 +60,10 @@ python .trae/skills/index-summary-eval/scripts/evaluation_engine.py \
 
 - 因子压缩：
   - `Volume = 0.6*P(lock_cnt) + 0.25*P(leads) + 0.15*P(leads_store)`
-  - `Conversion(level) = 0.6*P(store_lock0_rate) + 0.4*P(td0_rate)`
-  - `Conversion(end_state) = 0.7*P(store_lock0_rate) + 0.3*P(td0_rate)`
+  - `Conversion` 依据评估日期距今天的滞后动态切换：
+    - `lag <= 7d`：`Conversion(level) = 0.6*P(store_lock0_rate) + 0.4*P(td0_rate)`；`Conversion(end_state) = 0.7*P(store_lock0_rate) + 0.3*P(td0_rate)`
+    - `7d < lag <= 30d`：加入 `P(conv7)`（下发线索当7日锁单率）
+    - `lag > 30d`：加入 `P(conv30)`（下发线索当30日锁单率），并提高其权重（当前配置：`conv30≈0.70`）
 - 分位函数：`P(x) = mean(history < x)`
 - 状态阈值：
   - `>=0.7` 为 `High`
