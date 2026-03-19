@@ -2,5 +2,10 @@ venv/
 __pycache__/
 .env
 .DS_Store
-out/
+out/**
+!out/**/
+!out/*.md
+!out/*.py
+!out/**/*.md
+!out/**/*.py
 schema/
