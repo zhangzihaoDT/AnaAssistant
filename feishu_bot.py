@@ -5,7 +5,7 @@ import json
 import time
 from dotenv import load_dotenv
 from collections import deque
-from query_agent import run_query_agent
+from main import run_main_agent
 
 # Load environment variables
 load_dotenv()
@@ -79,9 +79,9 @@ class FeishuBot:
         
         try:
             print("[Agent] Starting analysis workflow...")
-            # The run_query_agent function prints the reasoning trace to stdout
+            # The run_main_agent function prints the reasoning trace to stdout
             # which fulfills the user's requirement to see the workflow in the terminal.
-            answer = run_query_agent(text)
+            answer = run_main_agent(text)
             print(f"[Agent] Analysis complete. Sending reply...")
         except Exception as e:
             import traceback

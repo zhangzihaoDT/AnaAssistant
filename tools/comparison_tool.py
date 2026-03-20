@@ -1,13 +1,14 @@
 import pandas as pd
 
 from .query_tool import QueryTool
+from .statistics_tool import StatisticsTool
 
 
 class ComparisonTool:
     def __init__(self, query_tool: QueryTool):
         self.query_tool = query_tool
 
-    def perform_comparison(self, request: dict) -> str:
+    def perform_comparison_df(self, request: dict) -> pd.DataFrame | str:
         dataset = request.get("dataset")
         metrics = request.get("metrics", [])
         dimensions = request.get("dimensions", [])
@@ -131,14 +132,77 @@ class ComparisonTool:
                 ]
             )
 
+        return result_df
+
+    def perform_comparison(self, request: dict) -> str:
+        result_df = self.perform_comparison_df(request)
+        if isinstance(result_df, str):
+            return result_df
         return result_df.to_string(index=False)
+
+    def build_weekly_wow_series(self, request: dict) -> pd.DataFrame | str:
+        dataset = request.get("dataset")
+        filters = request.get("filters", [])
+        time = request.get("time", {}) or {}
+        statistics = request.get("statistics", {}) or {}
+
+        time_field = statistics.get("time_field") or time.get("field")
+        start = time.get("start")
+        end = time.get("end")
+
+        numerator_metric = statistics.get("numerator_metric", {}) or {}
+        denominator_metric = statistics.get("denominator_metric", {}) or {}
+        numerator_alias = numerator_metric.get("alias") or "门店当日锁单数"
+        denominator_alias = denominator_metric.get("alias") or "门店线索数"
+        window_weeks = statistics.get("window_weeks") or 10
+        weekdays = statistics.get("weekdays") or [4, 5]
+
+        if not dataset or not time_field:
+            return "对比分析缺少必要参数: dataset/time.field"
+
+        query_plan = {
+            "dataset": dataset,
+            "metrics": [
+                {
+                    "field": numerator_metric.get("field"),
+                    "agg": numerator_metric.get("agg") or "sum",
+                    "alias": numerator_alias,
+                },
+                {
+                    "field": denominator_metric.get("field"),
+                    "agg": denominator_metric.get("agg") or "sum",
+                    "alias": denominator_alias,
+                },
+            ],
+            "dimensions": [time_field],
+            "filters": [
+                *filters,
+                {"field": time_field, "op": ">=", "value": start},
+                {"field": time_field, "op": "<", "value": end},
+            ]
+            if start and end
+            else filters,
+        }
+
+        raw_df = self.query_tool.execute_analysis_df(query_plan)
+        if isinstance(raw_df, str):
+            return raw_df
+
+        return StatisticsTool.build_weekly_wow_series(
+            input_df=raw_df,
+            time_field=time_field,
+            numerator_alias=numerator_alias,
+            denominator_alias=denominator_alias,
+            weekdays=weekdays,
+            window_weeks=window_weeks,
+        )
 
 
 COMPARISON_TOOL_SCHEMA = {
     "type": "function",
     "function": {
         "name": "perform_comparison",
-        "description": "执行派生指标对比分析（同比/环比），在同一口径下对比两个时间窗口。",
+        "description": "执行跨时间窗口对比分析（yoy/wow），输出当前窗口与对比窗口的差值和涨幅。",
         "parameters": {
             "type": "object",
             "properties": {

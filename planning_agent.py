@@ -55,6 +55,42 @@ PLANNING_TOOL_SCHEMA = {
                                     "top_k": {"type": "integer"},
                                 },
                             },
+                            "statistics": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string", "enum": ["weekly_decline_ratio", "daily_threshold_count"]},
+                                    "time_field": {"type": "string"},
+                                    "window_weeks": {"type": "integer"},
+                                    "window_days": {"type": "integer"},
+                                    "weekdays": {"type": "array", "items": {"type": "integer"}},
+                                    "op": {"type": "string", "enum": [">", ">=", "<", "<=", "==", "!="]},
+                                    "threshold": {"type": "number"},
+                                    "numerator_metric": {
+                                        "type": "object",
+                                        "properties": {
+                                            "field": {"type": "string"},
+                                            "agg": {"type": "string", "enum": ["sum", "mean", "count", "min", "max"]},
+                                            "alias": {"type": "string"},
+                                        },
+                                    },
+                                    "denominator_metric": {
+                                        "type": "object",
+                                        "properties": {
+                                            "field": {"type": "string"},
+                                            "agg": {"type": "string", "enum": ["sum", "mean", "count", "min", "max"]},
+                                            "alias": {"type": "string"},
+                                        },
+                                    },
+                                    "value_metric": {
+                                        "type": "object",
+                                        "properties": {
+                                            "field": {"type": "string"},
+                                            "agg": {"type": "string", "enum": ["sum", "mean", "count", "min", "max"]},
+                                            "alias": {"type": "string"},
+                                        },
+                                    },
+                                },
+                            },
                         },
                         "required": ["dataset", "metric", "time", "comparison"],
                     },
@@ -89,6 +125,23 @@ class PlanningAgent:
         if "环比" in q or "周环比" in q:
             return "wow"
         return "none"
+
+    @staticmethod
+    def _classify_intent(user_query: str) -> str:
+        q = (user_query or "").strip()
+        if not q:
+            return "query"
+
+        stat_keywords = ["有多少天", "多少天", "几天", "多少周", "几周", "连续", "超过", "大于", "小于", "高于", "低于", "阈值", "下降"]
+        has_stat_keyword = any(k in q for k in stat_keywords)
+        has_time_window = bool(re.search(r"近\s*\d+\s*(日|天|周|月)", q)) or any(
+            k in q for k in ["昨天", "昨日", "本周", "上周", "本月", "上月", "今年", "去年"]
+        )
+        if has_stat_keyword and has_time_window:
+            return "statistics"
+        if any(k in q for k in ["同比", "年同比", "环比", "周环比"]):
+            return "comparison"
+        return "query"
 
     @staticmethod
     def _parse_time_window(user_query: str, today: datetime.date) -> tuple[str, str] | None:
@@ -341,6 +394,205 @@ class PlanningAgent:
         return [*filters, new_filter]
 
     @staticmethod
+    def _parse_recent_weeks(user_query: str) -> int | None:
+        q = user_query or ""
+        m = re.search(r"近\s*(\d{1,3})\s*周", q)
+        if not m:
+            return None
+        try:
+            v = int(m.group(1))
+            return v if v > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _parse_recent_days(user_query: str) -> int | None:
+        q = user_query or ""
+        m = re.search(r"近\s*(\d{1,3})\s*(?:日|天)", q)
+        if not m:
+            return None
+        try:
+            v = int(m.group(1))
+            return v if v > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _parse_threshold_condition(user_query: str) -> tuple[str, float] | None:
+        q = (user_query or "").replace(" ", "")
+        pattern_map = [
+            (r"(?:大于等于|不低于|不少于|>=)\s*(\d+(?:\.\d+)?)", ">="),
+            (r"(?:小于等于|不高于|不大于|<=)\s*(\d+(?:\.\d+)?)", "<="),
+            (r"(?:大于|高于|超过|>)\s*(\d+(?:\.\d+)?)", ">"),
+            (r"(?:小于|低于|<)\s*(\d+(?:\.\d+)?)", "<"),
+            (r"(?:等于|==)\s*(\d+(?:\.\d+)?)", "=="),
+            (r"(?:不等于|!=)\s*(\d+(?:\.\d+)?)", "!="),
+        ]
+        for pattern, op in pattern_map:
+            m = re.search(pattern, q)
+            if not m:
+                continue
+            try:
+                return (op, float(m.group(1)))
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _parse_weekdays(user_query: str) -> list[int]:
+        q = user_query or ""
+        mapping = {
+            "周一": 1,
+            "星期一": 1,
+            "周二": 2,
+            "星期二": 2,
+            "周三": 3,
+            "星期三": 3,
+            "周四": 4,
+            "星期四": 4,
+            "周五": 5,
+            "星期五": 5,
+            "周六": 6,
+            "星期六": 6,
+            "周日": 7,
+            "周天": 7,
+            "星期日": 7,
+            "星期天": 7,
+        }
+        out: list[int] = []
+        for k, v in mapping.items():
+            if k in q:
+                out.append(v)
+        return sorted(list(dict.fromkeys(out)))
+
+    @staticmethod
+    def _is_weekly_decline_ratio_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_rate = "锁单率" in q
+        has_decline = ("下降" in q and "多少" in q) or "下降周数" in q
+        has_week_window = "近" in q and "周" in q
+        has_source = "下发线索" in q and "门店" in q
+        has_weekday = ("周四" in q or "星期四" in q or "周五" in q or "星期五" in q)
+        return has_rate and has_decline and has_week_window and has_source and has_weekday
+
+    @staticmethod
+    def _is_daily_threshold_count_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_day_count = ("多少天" in q) or ("几天" in q)
+        has_recent_day = ("近" in q) and (("日" in q) or ("天" in q))
+        has_threshold = PlanningAgent._parse_threshold_condition(q) is not None
+        return has_day_count and has_recent_day and has_threshold
+
+    def _build_weekly_decline_ratio_plan(self, user_query: str) -> dict:
+        today = datetime.date.today()
+        weeks = self._parse_recent_weeks(user_query) or 10
+        start = today - datetime.timedelta(days=weeks * 7)
+        end = today
+        weekdays = self._parse_weekdays(user_query) or [4, 5]
+        time_field = "Assign Time 年/月/日"
+        numerator = {"field": "下发线索当日锁单数 (门店)", "agg": "sum", "alias": "门店当日锁单数"}
+        denominator = {"field": "下发线索数 (门店)", "agg": "sum", "alias": "门店线索数"}
+        plan = {
+            "dataset": "assign_data",
+            "metric": numerator,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "weekly_decline_ratio",
+                "time_field": time_field,
+                "window_weeks": weeks,
+                "weekdays": weekdays,
+                "numerator_metric": numerator,
+                "denominator_metric": denominator,
+            },
+        }
+        return self._normalize_plan(plan)
+
+    def _build_daily_threshold_count_plan(self, user_query: str) -> dict | None:
+        metric_defaults = self._metric_defaults(user_query)
+        threshold_cond = self._parse_threshold_condition(user_query)
+        if not metric_defaults or not threshold_cond:
+            return None
+        op, threshold = threshold_cond
+        today = datetime.date.today()
+        days = self._parse_recent_days(user_query) or 30
+        start = today - datetime.timedelta(days=days)
+        end = today
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+
+        plan = {
+            "dataset": metric_defaults["dataset"],
+            "metric": value_metric,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [{"field": time_field, "op": "!=", "value": None}],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "daily_threshold_count",
+                "time_field": time_field,
+                "window_days": days,
+                "op": op,
+                "threshold": threshold,
+                "value_metric": value_metric,
+            },
+        }
+        return self._normalize_plan(plan)
+
+    @staticmethod
+    def _statistics_plan_valid(statistics: dict, plan: dict) -> bool:
+        stype = statistics.get("type")
+        if stype == "weekly_decline_ratio":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            weekdays = statistics.get("weekdays")
+            numerator = statistics.get("numerator_metric")
+            denominator = statistics.get("denominator_metric")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if not isinstance(weekdays, list) or not weekdays:
+                return False
+            if not isinstance(numerator, dict) or not isinstance(denominator, dict):
+                return False
+            if not numerator.get("field") or not denominator.get("field"):
+                return False
+            if not numerator.get("agg") or not denominator.get("agg"):
+                return False
+            if (
+                numerator.get("field") == denominator.get("field")
+                and numerator.get("agg") == denominator.get("agg")
+                and (numerator.get("alias") or "") == (denominator.get("alias") or "")
+            ):
+                return False
+            return True
+
+        if stype == "daily_threshold_count":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            op = statistics.get("op")
+            threshold = statistics.get("threshold")
+            value_metric = statistics.get("value_metric")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if op not in {">", ">=", "<", "<=", "==", "!="}:
+                return False
+            if not isinstance(value_metric, dict):
+                return False
+            if not value_metric.get("field") or not value_metric.get("agg"):
+                return False
+            try:
+                float(threshold)
+            except Exception:
+                return False
+            return True
+
+        return False
+
+    @staticmethod
     def _normalize_plan(plan: dict) -> dict:
         dataset = plan.get("dataset")
         if isinstance(dataset, str):
@@ -448,6 +700,41 @@ class PlanningAgent:
         if not isinstance(metric, dict):
             plan["metric"] = {}
 
+        statistics = plan.get("statistics")
+        if statistics is not None and not isinstance(statistics, dict):
+            plan["statistics"] = {}
+        elif isinstance(statistics, dict):
+            stype = statistics.get("type")
+            if stype not in {"weekly_decline_ratio", "daily_threshold_count"}:
+                plan["statistics"] = {}
+            elif stype == "weekly_decline_ratio":
+                wdays = statistics.get("weekdays")
+                if isinstance(wdays, list):
+                    normalized_wdays = []
+                    for w in wdays:
+                        if isinstance(w, (int, float, str)) and str(w).isdigit():
+                            iv = int(w)
+                            if 1 <= iv <= 7:
+                                normalized_wdays.append(iv)
+                    statistics["weekdays"] = sorted(list(dict.fromkeys(normalized_wdays)))
+                wweeks = statistics.get("window_weeks")
+                if isinstance(wweeks, str) and wweeks.isdigit():
+                    statistics["window_weeks"] = int(wweeks)
+            elif stype == "daily_threshold_count":
+                op = statistics.get("op")
+                if op not in {">", ">=", "<", "<=", "==", "!="}:
+                    statistics["op"] = ">"
+                threshold = statistics.get("threshold")
+                try:
+                    statistics["threshold"] = float(threshold)
+                except Exception:
+                    statistics["threshold"] = 0.0
+                wdays = statistics.get("window_days")
+                if isinstance(wdays, str) and wdays.isdigit():
+                    statistics["window_days"] = int(wdays)
+            if not PlanningAgent._statistics_plan_valid(statistics, plan):
+                plan["statistics"] = {}
+
         return plan
 
     def _rule_based_plan(self, user_query: str) -> dict | None:
@@ -491,6 +778,17 @@ class PlanningAgent:
     def create_plans(self, user_query: str) -> list[dict]:
         parts = self._split_user_query(user_query) or [user_query]
         for part in parts:
+            intent = self._classify_intent(part)
+            if intent == "statistics" and self._is_weekly_decline_ratio_query(part):
+                p = self._build_weekly_decline_ratio_plan(part)
+                p["question"] = part
+                return [p]
+            if intent == "statistics" and self._is_daily_threshold_count_query(part):
+                p = self._build_daily_threshold_count_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
+        for part in parts:
             if self._should_sales_clarify(part):
                 return [{"question": part, "clarification": self._sales_clarification(part)}]
             need, city = self._should_city_clarify(part)
@@ -512,12 +810,16 @@ class PlanningAgent:
                     f"{self.business_definition}\n\n"
                     "约束:\n"
                     "- 规划 DSL 中 time.start/time.end 必须是 YYYY-MM-DD，且 end 为开区间。\n"
-                    "- 如果问题涉及同比/年同比，comparison.type = yoy；涉及环比/周环比，comparison.type = wow。\n"
+                    "- 如果问题涉及同比/年同比，comparison.type = yoy；涉及跨窗口环比（非统计计数问题）时，comparison.type = wow。\n"
                     "- 如果用户一句话包含多个子问题，请拆成多个 plan，按出现顺序返回。\n"
                     "- 如果你拆了子问题，请为每个 plan 填写 question 字段用于回显。\n"
                     "- 遇到歧义必须返回 clarification.need=true，而不是自行猜测。\n"
                     "- 澄清规则与口径定义以 Schema 文档为准。\n"
                     "- 锁单量的统计口径：order_number count 且 lock_time 非空，时间筛选基于 lock_time。\n"
+                    "- 若问题是时序统计类（如近N周、指定周内日、多少周下降），请在 plan.statistics 中输出 weekly_decline_ratio 配置；该类型表示单窗口内按周聚合后做周环比序列统计。\n"
+                    "- weekly_decline_ratio 必须包含: time_field/window_weeks/weekdays/numerator_metric/denominator_metric。\n"
+                    "- 若问题是阈值计数类（如近N日有多少天指标大于X），请在 plan.statistics 中输出 daily_threshold_count 配置。\n"
+                    "- daily_threshold_count 必须包含: time_field/window_days/op/threshold/value_metric。\n"
                 ),
             },
             {"role": "user", "content": user_query},

@@ -3,7 +3,7 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 from tools import get_current_time, TIME_TOOL_SCHEMA
-from query_agent import run_query_agent
+from main import run_main_agent
 
 # Load environment variables
 load_dotenv()
@@ -58,7 +58,7 @@ def test_bi_agent_regression():
     for (q,) in cases:
         print(f"\n回归提问: '{q}'")
         try:
-            ans = run_query_agent(q)
+            ans = run_main_agent(q)
             print(ans)
         except Exception as e:
             print(f"Error: {e}")
