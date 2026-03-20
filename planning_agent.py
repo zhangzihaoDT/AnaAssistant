@@ -58,10 +58,11 @@ PLANNING_TOOL_SCHEMA = {
                             "statistics": {
                                 "type": "object",
                                 "properties": {
-                                    "type": {"type": "string", "enum": ["weekly_decline_ratio", "daily_threshold_count"]},
+                                    "type": {"type": "string", "enum": ["weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank"]},
                                     "time_field": {"type": "string"},
                                     "window_weeks": {"type": "integer"},
                                     "window_days": {"type": "integer"},
+                                    "reference_date": {"type": "string"},
                                     "weekdays": {"type": "array", "items": {"type": "integer"}},
                                     "op": {"type": "string", "enum": [">", ">=", "<", "<=", "==", "!="]},
                                     "threshold": {"type": "number"},
@@ -132,9 +133,30 @@ class PlanningAgent:
         if not q:
             return "query"
 
-        stat_keywords = ["有多少天", "多少天", "几天", "多少周", "几周", "连续", "超过", "大于", "小于", "高于", "低于", "阈值", "下降"]
+        stat_keywords = [
+            "有多少天",
+            "多少天",
+            "几天",
+            "多少周",
+            "几周",
+            "连续",
+            "超过",
+            "大于",
+            "小于",
+            "高于",
+            "低于",
+            "阈值",
+            "下降",
+            "日均",
+            "均值",
+            "平均值",
+            "平均",
+            "分位",
+            "百分位",
+        ]
         has_stat_keyword = any(k in q for k in stat_keywords)
-        has_time_window = bool(re.search(r"近\s*\d+\s*(日|天|周|月)", q)) or any(
+        has_explicit_window = PlanningAgent._parse_time_window(q, datetime.date.today()) is not None
+        has_time_window = has_explicit_window or bool(re.search(r"近\s*\d+\s*(日|天|周|月)", q)) or any(
             k in q for k in ["昨天", "昨日", "本周", "上周", "本月", "上月", "今年", "去年"]
         )
         if has_stat_keyword and has_time_window:
@@ -204,8 +226,8 @@ class PlanningAgent:
                 return window
 
         m = re.search(
-            r"(?P<y>\d{2,4})年\s*(?P<m>\d{1,2})月\s*(?P<d>\d{1,2})[日号]?\s*(?:到|至|[-~—–－])\s*"
-            r"(?:(?P<y2>\d{2,4})年\s*)?(?:(?P<m2>\d{1,2})月\s*)?(?P<d2>\d{1,2})[日号]?",
+            r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*[日号]?\s*(?:到|至|[-~—–－])\s*"
+            r"(?:(?P<y2>\d{2,4})\s*年\s*)?(?:(?P<m2>\d{1,2})\s*月\s*)?(?P<d2>\d{1,2})\s*[日号]?",
             q,
         )
         if m:
@@ -222,7 +244,7 @@ class PlanningAgent:
                 return (start_date.isoformat(), end_open.isoformat())
 
         m = re.search(
-            r"(?P<y>\d{2,4})年\s*(?P<m>\d{1,2})月\s*(?:整月|全月|整个月)",
+            r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?:整月|全月|整个月)",
             q,
         )
         if m:
@@ -232,7 +254,7 @@ class PlanningAgent:
             if window:
                 return window
 
-        m = re.search(r"(?P<y>\d{2,4})年\s*(?P<m>\d{1,2})月(?!\d)", q)
+        m = re.search(r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月(?!\d)", q)
         if m and ("整月" in q or "全月" in q or "整个月" in q):
             year = _normalize_year(m.group("y")) or today.year
             month = int(m.group("m"))
@@ -240,7 +262,7 @@ class PlanningAgent:
             if window:
                 return window
 
-        m = re.search(r"(?P<y>\d{2,4})年\s*(?P<m>\d{1,2})月\s*(?P<d>\d{1,2})[日号]?", q)
+        m = re.search(r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*[日号]?", q)
         if m:
             year = _normalize_year(m.group("y")) or today.year
             month = int(m.group("m"))
@@ -487,6 +509,91 @@ class PlanningAgent:
         has_threshold = PlanningAgent._parse_threshold_condition(q) is not None
         return has_day_count and has_recent_day and has_threshold
 
+    @staticmethod
+    def _is_daily_mean_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_mean = any(k in q for k in ["日均", "均值", "平均值", "平均"])
+        has_recent_day = bool(re.search(r"近\s*\d+\s*(日|天)", q))
+        has_relative_day = any(k in q for k in ["昨天", "昨日", "今天", "今日", "本周", "上周", "本月", "上月"])
+        has_explicit_window = PlanningAgent._extract_explicit_time_window(q, datetime.date.today()) is not None
+        return has_mean and (has_recent_day or has_relative_day or has_explicit_window)
+
+    @staticmethod
+    def _is_daily_percentile_rank_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_percentile = any(k in q for k in ["分位", "百分位", "分位值", "百分位值"])
+        has_ref = any(k in q for k in ["昨天", "昨日", "今天", "今日"])
+        has_recent_day = bool(re.search(r"近\s*\d+\s*(日|天)", q))
+        return has_percentile and has_ref and has_recent_day
+
+    @staticmethod
+    def _extract_explicit_time_window(user_query: str, today: datetime.date) -> tuple[str, str] | None:
+        q = user_query or ""
+        sanitized = re.sub(r"(昨天|昨日|今天|今日|本周|上周|本月|上月|今年|去年|前年)", " ", q)
+        return PlanningAgent._parse_time_window(sanitized, today)
+
+    def _build_yesterday_vs_range_daily_mean_plans(self, user_query: str) -> list[dict] | None:
+        q = user_query or ""
+        if not q:
+            return None
+        has_compare = any(k in q for k in ["对比", "相比", "对照", "较"])
+        has_yesterday = any(k in q for k in ["昨天", "昨日"])
+        has_mean = any(k in q for k in ["日均", "均值", "平均值", "平均"])
+        if not (has_compare and has_yesterday and has_mean):
+            return None
+
+        today = datetime.date.today()
+        explicit_window = self._extract_explicit_time_window(q, today)
+        if not explicit_window:
+            return None
+
+        metric_defaults = self._metric_defaults(q)
+        if not metric_defaults:
+            return None
+
+        range_start, range_end = explicit_window
+        start_date = datetime.date.fromisoformat(range_start)
+        end_date = datetime.date.fromisoformat(range_end)
+        window_days = max(1, (end_date - start_date).days)
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+        yesterday_start = (today - datetime.timedelta(days=1)).isoformat()
+        yesterday_end = today.isoformat()
+
+        yesterday_plan = self._normalize_plan(
+            {
+                "dataset": metric_defaults["dataset"],
+                "metric": value_metric,
+                "time": {"field": time_field, "start": yesterday_start, "end": yesterday_end},
+                "dimensions": [],
+                "filters": [{"field": time_field, "op": "!=", "value": None}],
+                "comparison": {"type": "none"},
+                "question": "昨天的锁单数",
+            }
+        )
+        mean_plan = self._normalize_plan(
+            {
+                "dataset": metric_defaults["dataset"],
+                "metric": value_metric,
+                "time": {"field": time_field, "start": range_start, "end": range_end},
+                "dimensions": [time_field],
+                "filters": [{"field": time_field, "op": "!=", "value": None}],
+                "comparison": {"type": "none"},
+                "statistics": {
+                    "type": "daily_mean",
+                    "time_field": time_field,
+                    "window_days": window_days,
+                    "value_metric": value_metric,
+                },
+                "question": "指定区间日均锁单数",
+            }
+        )
+        return [yesterday_plan, mean_plan]
+
     def _build_weekly_decline_ratio_plan(self, user_query: str) -> dict:
         today = datetime.date.today()
         weeks = self._parse_recent_weeks(user_query) or 10
@@ -545,6 +652,67 @@ class PlanningAgent:
         }
         return self._normalize_plan(plan)
 
+    def _build_daily_mean_plan(self, user_query: str) -> dict | None:
+        metric_defaults = self._metric_defaults(user_query)
+        if not metric_defaults:
+            return None
+        today = datetime.date.today()
+        explicit_window = self._extract_explicit_time_window(user_query, today)
+        if explicit_window:
+            start_s, end_s = explicit_window
+            start = datetime.date.fromisoformat(start_s)
+            end = datetime.date.fromisoformat(end_s)
+            days = max(1, (end - start).days)
+        else:
+            days = self._parse_recent_days(user_query) or 30
+            start = today - datetime.timedelta(days=days)
+            end = today
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+        plan = {
+            "dataset": metric_defaults["dataset"],
+            "metric": value_metric,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [{"field": time_field, "op": "!=", "value": None}],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "daily_mean",
+                "time_field": time_field,
+                "window_days": days,
+                "value_metric": value_metric,
+            },
+        }
+        return self._normalize_plan(plan)
+
+    def _build_daily_percentile_rank_plan(self, user_query: str) -> dict | None:
+        metric_defaults = self._metric_defaults(user_query)
+        if not metric_defaults:
+            return None
+        today = datetime.date.today()
+        days = self._parse_recent_days(user_query) or 30
+        start = today - datetime.timedelta(days=days)
+        end = today
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+        reference_date = (today - datetime.timedelta(days=1)).isoformat() if any(k in user_query for k in ["昨天", "昨日"]) else today.isoformat()
+        plan = {
+            "dataset": metric_defaults["dataset"],
+            "metric": value_metric,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [{"field": time_field, "op": "!=", "value": None}],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "daily_percentile_rank",
+                "time_field": time_field,
+                "window_days": days,
+                "reference_date": reference_date,
+                "value_metric": value_metric,
+            },
+        }
+        return self._normalize_plan(plan)
+
     @staticmethod
     def _statistics_plan_valid(statistics: dict, plan: dict) -> bool:
         stype = statistics.get("type")
@@ -587,6 +755,31 @@ class PlanningAgent:
             try:
                 float(threshold)
             except Exception:
+                return False
+            return True
+
+        if stype == "daily_mean":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            value_metric = statistics.get("value_metric")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if not isinstance(value_metric, dict):
+                return False
+            if not value_metric.get("field") or not value_metric.get("agg"):
+                return False
+            return True
+
+        if stype == "daily_percentile_rank":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            value_metric = statistics.get("value_metric")
+            reference_date = statistics.get("reference_date")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if not isinstance(value_metric, dict):
+                return False
+            if not value_metric.get("field") or not value_metric.get("agg"):
+                return False
+            if reference_date is not None and not isinstance(reference_date, str):
                 return False
             return True
 
@@ -705,7 +898,7 @@ class PlanningAgent:
             plan["statistics"] = {}
         elif isinstance(statistics, dict):
             stype = statistics.get("type")
-            if stype not in {"weekly_decline_ratio", "daily_threshold_count"}:
+            if stype not in {"weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank"}:
                 plan["statistics"] = {}
             elif stype == "weekly_decline_ratio":
                 wdays = statistics.get("weekdays")
@@ -729,6 +922,14 @@ class PlanningAgent:
                     statistics["threshold"] = float(threshold)
                 except Exception:
                     statistics["threshold"] = 0.0
+                wdays = statistics.get("window_days")
+                if isinstance(wdays, str) and wdays.isdigit():
+                    statistics["window_days"] = int(wdays)
+            elif stype == "daily_mean":
+                wdays = statistics.get("window_days")
+                if isinstance(wdays, str) and wdays.isdigit():
+                    statistics["window_days"] = int(wdays)
+            elif stype == "daily_percentile_rank":
                 wdays = statistics.get("window_days")
                 if isinstance(wdays, str) and wdays.isdigit():
                     statistics["window_days"] = int(wdays)
@@ -775,19 +976,41 @@ class PlanningAgent:
         parts = re.split(r"[？?\n；;]+", q)
         return [p.strip() for p in parts if p and p.strip()]
 
+    def _finalize_plans(self, plans: list[dict], user_query: str) -> list[dict]:
+        finalized: list[dict] = []
+        for plan in plans:
+            if not isinstance(plan, dict) or not plan:
+                continue
+            q = plan.get("question") or user_query
+            normalized = self._fill_defaults(self._normalize_plan(plan), q)
+            has_compare = any(k in q for k in ["对比", "相比", "对照", "较"])
+            if self._is_daily_mean_query(q):
+                stat = normalized.get("statistics")
+                if has_compare and any(k in q for k in ["昨天", "昨日"]):
+                    pair = self._build_yesterday_vs_range_daily_mean_plans(q)
+                    if isinstance(pair, list) and pair:
+                        finalized.extend(pair)
+                        continue
+                if not has_compare and (not isinstance(stat, dict) or stat.get("type") != "daily_mean"):
+                    daily_plan = self._build_daily_mean_plan(q)
+                    if isinstance(daily_plan, dict) and daily_plan:
+                        daily_plan["question"] = q
+                        finalized.append(daily_plan)
+                        continue
+            if self._is_daily_percentile_rank_query(q):
+                stat = normalized.get("statistics")
+                if not isinstance(stat, dict) or stat.get("type") != "daily_percentile_rank":
+                    percentile_plan = self._build_daily_percentile_rank_plan(q)
+                    if isinstance(percentile_plan, dict) and percentile_plan:
+                        percentile_plan["question"] = q
+                        finalized.append(percentile_plan)
+                        continue
+            normalized["question"] = q
+            finalized.append(normalized)
+        return [p for p in finalized if isinstance(p, dict) and p]
+
     def create_plans(self, user_query: str) -> list[dict]:
         parts = self._split_user_query(user_query) or [user_query]
-        for part in parts:
-            intent = self._classify_intent(part)
-            if intent == "statistics" and self._is_weekly_decline_ratio_query(part):
-                p = self._build_weekly_decline_ratio_plan(part)
-                p["question"] = part
-                return [p]
-            if intent == "statistics" and self._is_daily_threshold_count_query(part):
-                p = self._build_daily_threshold_count_plan(part)
-                if isinstance(p, dict) and p:
-                    p["question"] = part
-                    return [p]
         for part in parts:
             if self._should_sales_clarify(part):
                 return [{"question": part, "clarification": self._sales_clarification(part)}]
@@ -820,6 +1043,10 @@ class PlanningAgent:
                     "- weekly_decline_ratio 必须包含: time_field/window_weeks/weekdays/numerator_metric/denominator_metric。\n"
                     "- 若问题是阈值计数类（如近N日有多少天指标大于X），请在 plan.statistics 中输出 daily_threshold_count 配置。\n"
                     "- daily_threshold_count 必须包含: time_field/window_days/op/threshold/value_metric。\n"
+                    "- 若问题是日均类（如近N日/近N天日均锁单数），请在 plan.statistics 中输出 daily_mean 配置。\n"
+                    "- daily_mean 必须包含: time_field/window_days/value_metric；其中 value_metric 对锁单量仍用 order_number count。\n"
+                    "- 若问题是分位类（如昨天锁单数在近N日中处于什么分位），请在 plan.statistics 中输出 daily_percentile_rank 配置。\n"
+                    "- daily_percentile_rank 必须包含: time_field/window_days/reference_date/value_metric。\n"
                 ),
             },
             {"role": "user", "content": user_query},
@@ -848,13 +1075,11 @@ class PlanningAgent:
                     for p in raw_plans:
                         if not isinstance(p, dict):
                             continue
-                        q = p.get("question") or user_query
-                        plans.append(self._fill_defaults(self._normalize_plan(p), q))
-                    return [p for p in plans if isinstance(p, dict) and p]
+                        plans.append(p)
+                    return self._finalize_plans(plans, user_query)
                 raw_plan = args.get("plan")
                 if isinstance(raw_plan, dict):
-                    q = raw_plan.get("question") or user_query
-                    return [self._fill_defaults(self._normalize_plan(raw_plan), q)]
+                    return self._finalize_plans([raw_plan], user_query)
 
             content = message.content or ""
             obj = json.loads(content)
@@ -863,17 +1088,40 @@ class PlanningAgent:
                 for p in obj["plans"]:
                     if not isinstance(p, dict):
                         continue
-                    q = p.get("question") or user_query
-                    plans.append(self._fill_defaults(self._normalize_plan(p), q))
-                return [p for p in plans if isinstance(p, dict) and p]
+                    plans.append(p)
+                return self._finalize_plans(plans, user_query)
             if isinstance(obj, dict) and isinstance(obj.get("clarification"), dict) and obj["clarification"].get("need"):
                 return [{"question": user_query, "clarification": obj["clarification"]}]
             if isinstance(obj, dict) and isinstance(obj.get("plan"), dict):
-                p = obj["plan"]
-                q = p.get("question") or user_query
-                return [self._fill_defaults(self._normalize_plan(p), q)]
+                return self._finalize_plans([obj["plan"]], user_query)
         except Exception:
             pass
+
+        for part in parts:
+            intent = self._classify_intent(part)
+            if intent == "statistics":
+                ps = self._build_yesterday_vs_range_daily_mean_plans(part)
+                if isinstance(ps, list) and ps:
+                    return ps
+            if intent == "statistics" and self._is_weekly_decline_ratio_query(part):
+                p = self._build_weekly_decline_ratio_plan(part)
+                p["question"] = part
+                return [p]
+            if intent == "statistics" and self._is_daily_threshold_count_query(part):
+                p = self._build_daily_threshold_count_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
+            if intent == "statistics" and self._is_daily_mean_query(part) and not any(k in part for k in ["对比", "相比", "对照", "较"]):
+                p = self._build_daily_mean_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
+            if intent == "statistics" and self._is_daily_percentile_rank_query(part):
+                p = self._build_daily_percentile_rank_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
 
         base_defaults = self._metric_defaults(user_query)
         rule_plans: list[dict] = []
@@ -887,7 +1135,7 @@ class PlanningAgent:
             if isinstance(plan, dict) and plan:
                 plan["question"] = part
                 rule_plans.append(plan)
-        return rule_plans
+        return self._finalize_plans(rule_plans, user_query)
 
     def _fill_defaults(self, plan: dict, user_query: str) -> dict:
         metric_defaults = self._metric_defaults(user_query)

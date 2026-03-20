@@ -474,6 +474,111 @@ def run_main_agent(user_query: str) -> str:
                             tool_result = statistics_tool.perform_statistics(stat_request, raw_df)
                         except Exception as e:
                             tool_result = {"type": "daily_threshold_count", "error": "statistics_execution_failed", "message": str(e)}
+        elif stats_type == "daily_mean" and tool_result is None:
+            print("\n[Thinking] 执行统计型日均分析...")
+            value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
+            metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
+            if comparison_df is not None:
+                tool_result = {
+                    "type": "daily_mean",
+                    "error": "unsupported_pipeline_input",
+                    "message": "daily_mean 暂不支持 comparison 联动，请使用单窗口查询。",
+                }
+            else:
+                query_plan = {
+                    "dataset": dataset,
+                    "metrics": [
+                        {
+                            "field": value_metric.get("field") or metric.get("field"),
+                            "agg": value_metric.get("agg") or metric.get("agg") or "count",
+                            "alias": metric_alias,
+                        }
+                    ],
+                    "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                    "filters": [
+                        *filters_without_time,
+                        {"field": time_field, "op": ">=", "value": time_start},
+                        {"field": time_field, "op": "<", "value": time_end},
+                    ]
+                    if time_field and time_start and time_end
+                    else filters_without_time,
+                }
+                raw_df = query_tool.execute_analysis_df(query_plan)
+                if isinstance(raw_df, str):
+                    tool_result = raw_df
+                else:
+                    daily_missing_cols = [c for c in [statistics.get("time_field") or time_field, metric_alias] if c not in raw_df.columns]
+                    if daily_missing_cols:
+                        print(f"  ⚠️  daily_mean 输入列缺失，返回结构化错误: {daily_missing_cols}")
+                        tool_result = {
+                            "type": "daily_mean",
+                            "error": "invalid_statistics_input_schema",
+                            "missing_columns": daily_missing_cols,
+                        }
+                    else:
+                        stat_request = {
+                            "type": "daily_mean",
+                            "time_field": statistics.get("time_field") or time_field,
+                            "window_days": statistics.get("window_days") or 30,
+                            "metric_alias": metric_alias,
+                        }
+                        try:
+                            tool_result = statistics_tool.perform_statistics(stat_request, raw_df)
+                        except Exception as e:
+                            tool_result = {"type": "daily_mean", "error": "statistics_execution_failed", "message": str(e)}
+        elif stats_type == "daily_percentile_rank" and tool_result is None:
+            print("\n[Thinking] 执行统计型分位分析...")
+            value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
+            metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
+            if comparison_df is not None:
+                tool_result = {
+                    "type": "daily_percentile_rank",
+                    "error": "unsupported_pipeline_input",
+                    "message": "daily_percentile_rank 暂不支持 comparison 联动，请使用单窗口查询。",
+                }
+            else:
+                query_plan = {
+                    "dataset": dataset,
+                    "metrics": [
+                        {
+                            "field": value_metric.get("field") or metric.get("field"),
+                            "agg": value_metric.get("agg") or metric.get("agg") or "count",
+                            "alias": metric_alias,
+                        }
+                    ],
+                    "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                    "filters": [
+                        *filters_without_time,
+                        {"field": time_field, "op": ">=", "value": time_start},
+                        {"field": time_field, "op": "<", "value": time_end},
+                    ]
+                    if time_field and time_start and time_end
+                    else filters_without_time,
+                }
+                raw_df = query_tool.execute_analysis_df(query_plan)
+                if isinstance(raw_df, str):
+                    tool_result = raw_df
+                else:
+                    daily_missing_cols = [c for c in [statistics.get("time_field") or time_field, metric_alias] if c not in raw_df.columns]
+                    if daily_missing_cols:
+                        print(f"  ⚠️  daily_percentile_rank 输入列缺失，返回结构化错误: {daily_missing_cols}")
+                        tool_result = {
+                            "type": "daily_percentile_rank",
+                            "error": "invalid_statistics_input_schema",
+                            "missing_columns": daily_missing_cols,
+                        }
+                    else:
+                        stat_request = {
+                            "type": "daily_percentile_rank",
+                            "time_field": statistics.get("time_field") or time_field,
+                            "window_days": statistics.get("window_days") or 30,
+                            "reference_date": statistics.get("reference_date"),
+                            "metric_alias": metric_alias,
+                        }
+                        try:
+                            tool_result = statistics_tool.perform_statistics(stat_request, raw_df)
+                        except Exception as e:
+                            tool_result = {"type": "daily_percentile_rank", "error": "statistics_execution_failed", "message": str(e)}
 
         if tool_result is None:
             print("\n[Thinking] 执行单次查询...")
