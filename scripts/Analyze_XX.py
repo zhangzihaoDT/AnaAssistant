@@ -548,6 +548,55 @@ def module_store_daily_vs_30d_conversion_correlation(data: pd.DataFrame) -> str:
     return pio.to_html(fig, full_html=False, include_plotlyjs="cdn")
 
 
+def module_store_same_day_lock_rate_trend(data: pd.DataFrame) -> str:
+    x = data["date"].map(pd.Timestamp.toordinal).astype(float).to_numpy()
+    y = data["same_day_rate"].astype(float).to_numpy()
+    mean_value = float(data["same_day_rate"].mean())
+    lowess_fit = sm.nonparametric.lowess(y, x, frac=0.08, return_sorted=True)
+    lowess_x = [datetime.fromordinal(int(v)).date() for v in lowess_fit[:, 0]]
+    lowess_y = lowess_fit[:, 1]
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=data["date"],
+            y=data["same_day_rate"],
+            mode="markers",
+            name="门店当日锁单率（散点）",
+            marker={"color": "rgba(52, 152, 219, 0.35)", "size": 6},
+            hovertemplate="%{x|%Y-%m-%d}<br>门店当日锁单率: %{y:.2%}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=lowess_x,
+            y=lowess_y,
+            mode="lines",
+            name="LOWESS",
+            line={"color": COLORS["secondary"], "width": 3},
+            hovertemplate="%{x|%Y-%m-%d}<br>LOWESS: %{y:.2%}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[data["date"].min(), data["date"].max()],
+            y=[mean_value, mean_value],
+            mode="lines",
+            name="平均线",
+            line={"color": COLORS["axis"], "width": 2, "dash": "dash"},
+            hovertemplate="平均线: %{y:.2%}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        common_layout(
+            title="门店当日锁单率趋势（2025-01-01 ~ Max Date）",
+            xaxis_title="日期",
+            yaxis_title="门店当日锁单率",
+        )
+    )
+    fig.update_yaxes(tickformat=".1%")
+    return pio.to_html(fig, full_html=False, include_plotlyjs="cdn")
+
+
 def _state_from_percentile(p: float) -> str:
     if p >= 0.7:
         return "High"
@@ -811,11 +860,12 @@ def generate_report(
     modules = [
         ("1. 下发线索数趋势", module_leads_trend, leads_data),
         ("2. 订单表.店日均下发线索数趋势", module_store_daily_leads_trend, store_daily_leads_data),
-        ("3. 下发线索30日转化率趋势", module_30d_conversion_trend, conv30_data),
-        ("4. 店日均下发线索数与锁单数相关性", module_store_daily_vs_30d_conversion_correlation, store_daily_vs_30d_corr_data),
+        ("3. 店日均下发线索数与锁单数相关性", module_store_daily_vs_30d_conversion_correlation, store_daily_vs_30d_corr_data),
+        ("4. 下发线索30日转化率趋势", module_30d_conversion_trend, conv30_data),
         ("5. 门店当日锁单率与门店30日锁单率相关性", module_store_rate_correlation, store_corr_data),
-        ("6. 多元数据回测与分位状态识别", module_multivariate_backtest, multivar_data),
-        ("7. 锁单数分层双轴分析", module_lock_orders_layered_dual_axis, lock_orders_layered_data),
+        ("6. 门店当日锁单率趋势", module_store_same_day_lock_rate_trend, store_corr_data),
+        ("7. 多元数据回测与分位状态识别", module_multivariate_backtest, multivar_data),
+        ("8. 锁单数分层双轴分析", module_lock_orders_layered_dual_axis, lock_orders_layered_data),
     ]
     html = [
         "<!DOCTYPE html>",
