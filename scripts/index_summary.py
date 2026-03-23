@@ -3,7 +3,7 @@
 1) 无参维护模式（默认）
    python scripts/index_summary.py
    增量更新 schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv，
-   自动计算历史最大日期的下一天到 yesterday 的新数据并合并写回。
+   默认回刷最近 7 天并覆盖合并（可用 --refresh-days 调整）到 yesterday。
 
 2) 单日模式
    python scripts/index_summary.py --date 2026-03-10
@@ -18,7 +18,6 @@ import argparse
 import csv
 import json
 import re
-import sys
 from pathlib import Path
 import glob
 
@@ -1237,7 +1236,6 @@ def _default_maintenance_csv_path() -> Path:
 
 
 def main() -> None:
-    no_cli_args = len(sys.argv) == 1
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default=None)
     parser.add_argument("--start", default=None)
@@ -1249,12 +1247,13 @@ def main() -> None:
         "--data-path-md",
         default=str(Path(__file__).resolve().parents[1] / "schema" / "data_path.md"),
     )
+    parser.add_argument("--refresh-days", type=int, default=7)
     args = parser.parse_args()
 
     start_arg = args.start
     end_arg = args.end
-    maintenance_mode = no_cli_args
-    if no_cli_args:
+    maintenance_mode = (args.date is None) and (not args.start) and (not args.end)
+    if maintenance_mode:
         maintenance_csv_path = _default_maintenance_csv_path()
         if args.csv_out is None:
             args.csv_out = str(maintenance_csv_path)
@@ -1264,12 +1263,17 @@ def main() -> None:
         yesterday = pd.Timestamp.today().normalize() - pd.Timedelta(days=1)
         start_arg = "2024-01-01"
         end_arg = str(yesterday.date())
+        refresh_days = max(1, int(args.refresh_days or 1))
+        full_start = _parse_target_date("2024-01-01")
         if maintenance_csv_path.exists():
             existing_matrix = _read_daily_matrix_csv(maintenance_csv_path)
             hist_dates = _parse_matrix_dates([str(c) for c in (existing_matrix.get("columns") or [])])
             if hist_dates:
-                next_day = hist_dates[-1] + pd.Timedelta(days=1)
-                start_arg = str(next_day.date())
+                hist_max = min(hist_dates[-1], yesterday)
+                refresh_start = hist_max - pd.Timedelta(days=refresh_days - 1)
+                if refresh_start < full_start:
+                    refresh_start = full_start
+                start_arg = str(refresh_start.date())
 
     is_range = bool(start_arg or end_arg)
     if is_range and (not start_arg or not end_arg):
