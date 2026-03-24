@@ -17,7 +17,7 @@
 - **时间查询**：调用 `get_current_time` 获取实时时间。
 - **代码执行**：调用 `CodeInterpreter` 在沙箱中执行 Python 代码。
 
-### 2) Agentic BI 数据查询（`main.py`）
+### 2) Agentic BI 数据查询（`agent/agent_loop.py`）
 
 这是一个基于 **NL → Planning DSL → Execution DSL → Execution** 架构的智能数据分析 Agent。
 
@@ -37,7 +37,7 @@ PlanningAgent.create_plans()
   ↓
 plans[]（含 dataset/metric/time/filters/comparison/statistics）
   ↓
-main.py 按 plan 类型路由执行：
+agent/agent_loop.py 按 plan 类型路由执行：
   - comparison.type in {yoy,wow} → ComparisonTool（周序列场景复用共享算子）
   - statistics.type == weekly_decline_ratio → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
   - statistics.type == daily_threshold_count → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
@@ -171,7 +171,7 @@ AnalysisAgent 生成最终自然语言回答
 - **plan 合法性校验**：
   - statistics 计划会在规范化阶段校验必要字段与语义
   - 不合法时会清空 `statistics`，避免误路由到错误统计分支
-- **main.py 执行兜底**：
+- **agent/tool_router.py 执行兜底**：
   - 执行 statistics 前校验输入 DataFrame 所需列
   - 列缺失或执行异常时返回结构化错误对象，不直接抛异常
 
@@ -209,40 +209,52 @@ pip install -r requirements.txt
 python3 demo.py
 ```
 
+### 运行飞书消息接收测试
+
+```bash
+python3 feishu_test.py
+```
+
+### 运行飞书 Agent Bot
+
+```bash
+python3 feishu_bot.py
+```
+
 ### 运行数据查询 Agent
 
 ```bash
-python3 main.py "下发线索数 (门店) 的平均值是多少？"
+python3 -m agent.agent_loop "下发线索数 (门店) 的平均值是多少？"
 ```
 
 多子问题示例：
 
 ```bash
-python3 main.py "25年3月1日-3月10日锁单数多少？25年3月整月锁单数多少？"
+python3 -m agent.agent_loop "25年3月1日-3月10日锁单数多少？25年3月整月锁单数多少？"
 ```
 
 统计型示例：
 
 ```bash
-python3 main.py "查询近10周的周四、周五的下发线索（门店）锁单率环比变化，看有多少是下降的？"
+python3 -m agent.agent_loop "查询近10周的周四、周五的下发线索（门店）锁单率环比变化，看有多少是下降的？"
 ```
 
 ```bash
-python3 main.py "近30日有多少天锁单数是大于120的？"
+python3 -m agent.agent_loop "近30日有多少天锁单数是大于120的？"
 ```
 
 ```bash
-python3 main.py "2025年8月1日~10日锁单数日均值是多少？"
+python3 -m agent.agent_loop "2025年8月1日~10日锁单数日均值是多少？"
 ```
 
 ```bash
-python3 main.py "昨天的锁单数在近30日的锁单数中,处于什么分位值？"
+python3 -m agent.agent_loop "昨天的锁单数在近30日的锁单数中,处于什么分位值？"
 ```
 
 作为模块调用：
 
 ```python
-from main import run_main_agent
+from agent.agent_loop import run_main_agent
 
 answer = run_main_agent("昨天锁单数周环比如何？")
 print(answer)
@@ -251,8 +263,14 @@ print(answer)
 ## 项目结构
 
 - `demo.py`: 基础工具调用演示入口。
-- `main.py`: Agentic BI 主入口（规划、执行路由、最终回答）。
-- `planning_agent.py`: PlanningAgent（输出 `plans` 列表 + 意图解析与规范化）。
+- `agent/`: Agent 运行时目录
+  - `agent_loop.py`: 核心循环入口（状态驱动、多步执行、最终回答）。
+  - `planner.py`: 规划与 Loop 决策模块（PlanningAgent + 运行时 action 决策）。
+  - `tool_router.py`: 工具路由与 DSL 执行编排。
+  - `state.py`: Agent 状态管理（history/iteration/done/result_blocks）。
+  - `tools/`: 工具导出层（与根目录 `tools/` 保持一致）。
+  - `schema/`: schema 路径导出层（指向根目录 `schema/`）。
+- `main.py`: 兼容入口（转发至 `agent.agent_loop.run_main_agent`）。
 - `tools/`: 工具库
   - `query_tool.py`: 查询执行引擎（过滤、分组、聚合、排序）。
   - `comparison_tool.py`: 双窗口对比引擎（同比/周环比）。

@@ -3,6 +3,27 @@ import datetime
 import re
 
 from openai import OpenAI
+from agent.state import AgentRuntimeState
+
+LOOP_RUNTIME_SYSTEM_PROMPT = """
+你是一个数据分析 Agent Loop 调度器。
+你需要根据目标与历史执行结果，决定下一步动作，并且必须输出 JSON。
+
+输出格式:
+{
+  "action": "run_dsl 或 finish",
+  "reason": "为什么这样决策",
+  "query": "下一步要执行的自然语言查询（action=run_dsl 时必填）",
+  "analysis": "你对当前进展的理解"
+}
+
+规则:
+1. 如果信息还不足以回答用户目标，输出 run_dsl。
+2. 如果信息已足够，输出 finish。
+3. 最多执行 5 步，避免重复查询。
+4. query 必须具体，且与目标直接相关。
+5. 不允许输出除 JSON 以外的文本。
+"""
 
 
 PLANNING_TOOL_SCHEMA = {
@@ -1194,3 +1215,64 @@ class PlanningAgent:
         if plans:
             return plans[0]
         return {}
+
+
+def _extract_json_content(text: str) -> str:
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return raw
+
+
+def plan_runtime_action(client: OpenAI, state: AgentRuntimeState) -> dict:
+    if state.iteration == 0 and not state.history:
+        return {
+            "action": "run_dsl",
+            "reason": "首次执行，先获取核心数据事实。",
+            "query": state.goal,
+            "analysis": "开始围绕用户目标进行首轮查询。",
+        }
+
+    history_payload = json.dumps(state.history, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": LOOP_RUNTIME_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"用户目标:\n{state.goal}\n\n"
+                f"已执行步数: {state.iteration}/{state.max_steps}\n"
+                f"历史:\n{history_payload}\n\n"
+                "请输出下一步 JSON。"
+            ),
+        },
+    ]
+    try:
+        response = client.chat.completions.create(model="deepseek-chat", messages=messages)
+        content = response.choices[0].message.content or ""
+        parsed = json.loads(_extract_json_content(content))
+        if not isinstance(parsed, dict):
+            raise ValueError("runtime action is not an object")
+    except Exception as e:
+        return {
+            "action": "finish",
+            "reason": "loop action 解析失败，触发保底收敛。",
+            "analysis": f"解析异常: {str(e)}",
+        }
+
+    action = str(parsed.get("action") or "").strip().lower()
+    if action not in {"run_dsl", "finish"}:
+        action = "finish"
+    out = {
+        "action": action,
+        "reason": str(parsed.get("reason") or ""),
+        "analysis": str(parsed.get("analysis") or ""),
+    }
+    if action == "run_dsl":
+        query = str(parsed.get("query") or "").strip() or state.goal
+        out["query"] = query
+    return out
