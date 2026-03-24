@@ -1,7 +1,8 @@
 import json
 
 from agent.planner import PlanningAgent
-from tools import ComparisonTool, QueryTool, StatisticsTool
+from operators import run_registered_operator
+from tools import ComparisonTool, FastPathTool, QueryTool, StatisticsTool
 
 
 def _execute_single_plan(
@@ -10,11 +11,7 @@ def _execute_single_plan(
     query_tool: QueryTool,
     comparison_tool: ComparisonTool,
     statistics_tool: StatisticsTool,
-    idx: int,
-    total: int,
-) -> str:
-    print(f"\n  ➡️  规划 DSL[{idx}/{total}]: {json.dumps(plan, ensure_ascii=False)}")
-
+) -> dict:
     dataset = plan.get("dataset")
     metric = plan.get("metric", {}) or {}
     time = plan.get("time", {}) or {}
@@ -22,6 +19,7 @@ def _execute_single_plan(
     filters = plan.get("filters", []) or []
     comparison = plan.get("comparison", {}) or {}
     statistics = plan.get("statistics", {}) or {}
+    fast_path = plan.get("fast_path", {}) or {}
 
     time_field = time.get("field")
     time_start = time.get("start")
@@ -41,10 +39,23 @@ def _execute_single_plan(
     comparison_type = comparison.get("type")
     stats_type = statistics.get("type") if isinstance(statistics, dict) else None
 
+    execution_meta = {"engine": "dsl", "route": "query_tool"}
     tool_result = None
     comparison_df = None
+    if isinstance(fast_path, dict) and fast_path.get("type"):
+        execution_meta = {"engine": "fast_path", "route": f"fast_path.{str(fast_path.get('type'))}"}
+        tool_result = FastPathTool().run(config=fast_path, user_query=user_query)
+    operator_result = run_registered_operator(plan=plan, user_query=user_query, query_tool=query_tool)
+    if operator_result is not None and tool_result is None:
+        execution_meta = {
+            "engine": "operator",
+            "route": f"operators.{str(operator_result.get('type') or 'unknown')}",
+        }
+        print(f"[Route] 使用固定算子: {execution_meta['route']}")
+        tool_result = operator_result
     if comparison_type in {"yoy", "wow"}:
         if comparison_type == "wow" and stats_type == "weekly_decline_ratio":
+            execution_meta = {"engine": "comparison", "route": "comparison.weekly_wow_series"}
             print("\n[Thinking] 执行共享周序列算子（Comparison → Weekly WoW Series）...")
             comparison_result = comparison_tool.build_weekly_wow_series(
                 {
@@ -59,6 +70,7 @@ def _execute_single_plan(
             else:
                 comparison_df = comparison_result
         else:
+            execution_meta = {"engine": "comparison", "route": f"comparison.{comparison_type}"}
             print(f"\n[Thinking] 执行派生指标对比计算: {comparison_type}")
             comparison_result = comparison_tool.perform_comparison_df(
                 {
@@ -84,6 +96,7 @@ def _execute_single_plan(
                     tool_result = comparison_df.to_string(index=False)
 
     if stats_type == "weekly_decline_ratio" and tool_result is None:
+        execution_meta = {"engine": "statistics", "route": "statistics.weekly_decline_ratio"}
         print("\n[Thinking] 执行统计型序列分析...")
         if comparison_df is not None:
             if comparison_type != "wow":
@@ -157,6 +170,7 @@ def _execute_single_plan(
                     except Exception as e:
                         tool_result = {"type": "weekly_decline_ratio", "error": "statistics_execution_failed", "message": str(e)}
     elif stats_type == "daily_threshold_count" and tool_result is None:
+        execution_meta = {"engine": "statistics", "route": "statistics.daily_threshold_count"}
         print("\n[Thinking] 执行统计型阈值计数分析...")
         value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
         metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
@@ -240,6 +254,7 @@ def _execute_single_plan(
                     except Exception as e:
                         tool_result = {"type": "daily_threshold_count", "error": "statistics_execution_failed", "message": str(e)}
     elif stats_type == "daily_mean" and tool_result is None:
+        execution_meta = {"engine": "statistics", "route": "statistics.daily_mean"}
         print("\n[Thinking] 执行统计型日均分析...")
         value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
         metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
@@ -292,6 +307,7 @@ def _execute_single_plan(
                     except Exception as e:
                         tool_result = {"type": "daily_mean", "error": "statistics_execution_failed", "message": str(e)}
     elif stats_type == "daily_percentile_rank" and tool_result is None:
+        execution_meta = {"engine": "statistics", "route": "statistics.daily_percentile_rank"}
         print("\n[Thinking] 执行统计型分位分析...")
         value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
         metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
@@ -346,6 +362,7 @@ def _execute_single_plan(
                         tool_result = {"type": "daily_percentile_rank", "error": "statistics_execution_failed", "message": str(e)}
 
     if tool_result is None:
+        execution_meta = {"engine": "dsl", "route": "query_tool"}
         print("\n[Thinking] 执行单次查询...")
         query_plan = {
             "dataset": dataset,
@@ -373,9 +390,11 @@ def _execute_single_plan(
         fallback_result = query_tool.answer_question(fallback_question)
         tool_result = f"执行遇到问题: {tool_result}\n\n尝试关键词匹配结果:\n{fallback_result}"
 
+    print(f"[Route] 规划路由完成: {execution_meta['engine']}::{execution_meta['route']}")
     sub_query = plan.get("question") or user_query
     tool_result_text = json.dumps(tool_result, ensure_ascii=False, indent=2) if isinstance(tool_result, dict) else str(tool_result)
-    return f"子问题 {idx}: {sub_query}\n规划 DSL: {json.dumps(plan, ensure_ascii=False)}\n执行结果:\n{tool_result_text}"
+    block = f"查询: {sub_query}\nDSL: {json.dumps(plan, ensure_ascii=False)}\n执行结果:\n{tool_result_text}"
+    return {"block": block, "execution_meta": execution_meta}
 
 
 def run_dsl_step(
@@ -385,7 +404,7 @@ def run_dsl_step(
     comparison_tool: ComparisonTool,
     statistics_tool: StatisticsTool,
 ) -> dict:
-    print("\n[Thinking] PlanningAgent 正在构建规划 DSL...")
+    print("\n[Thinking] PlanningAgent 正在构建执行规划并路由...")
     plan = planning_agent.create_plan(action_query)
     if not isinstance(plan, dict) or not plan:
         return {"status": "error", "message": "未能生成有效的规划 DSL。"}
@@ -399,13 +418,15 @@ def run_dsl_step(
                 "original_question": plan.get("question") or action_query,
             }
 
-    block = _execute_single_plan(
+    execution = _execute_single_plan(
         plan=plan,
         user_query=action_query,
         query_tool=query_tool,
         comparison_tool=comparison_tool,
         statistics_tool=statistics_tool,
-        idx=1,
-        total=1,
     )
-    return {"status": "ok", "result_blocks": [block]}
+    return {
+        "status": "ok",
+        "result_blocks": [execution["block"]],
+        "execution_meta": execution.get("execution_meta") or {},
+    }

@@ -63,6 +63,14 @@
 - **小订数**: `order_number` 计数 (必须添加过滤条件: `intention_payment_time` 非空)。注意：时间筛选应基于 `intention_payment_time`。
 - **开票金额**: `invoice_amount` (求和/平均)
 - **订单计数**: `order_number` 计数
+- **在营门店数**: 以目标日 `d` 统计，口径为“最近 30 天内有活动且在 `d` 当天已开店的门店数”。
+  - 该指标由算子层统一计算：`operators/active_store.py`，优先走固定算子而不是通用 DSL 聚合。
+  - 活动日字段优先取 `order_create_date`，缺失时回退 `order_create_time`（按天截断）。
+  - 仅保留 `store_name` 与活动日非空记录。
+  - 每个门店开店日取 `store_create_date` 的最小值。
+  - 活跃门店集合为活动日落在 `[d-29, d]` 的门店。
+  - 在营判定为 `open_date <= d`，最终结果为门店 `store_name` 去重计数。
+  - 不要把 `store_create_date` 直接当作统计时间字段做简单 count。
 
 - **年龄**: `age` (平均/分布)
 - **试驾次数**: `td_countd` (求和/平均)

@@ -113,6 +113,14 @@ PLANNING_TOOL_SCHEMA = {
                                     },
                                 },
                             },
+                            "fast_path": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string", "enum": ["numeric_ratio", "current_iso_week"]},
+                                    "current": {"type": "number"},
+                                    "base": {"type": "number"},
+                                },
+                            },
                         },
                         "required": ["dataset", "metric", "time", "comparison"],
                     },
@@ -134,6 +142,8 @@ PLANNING_TOOL_SCHEMA = {
 
 
 class PlanningAgent:
+    _SERIES_CANDIDATES = ("LS9", "LS8", "LS7", "LS6", "L7", "L6")
+
     def __init__(self, client: OpenAI, schema_md: str, business_definition: str):
         self.client = client
         self.schema_md = schema_md or ""
@@ -318,6 +328,13 @@ class PlanningAgent:
     @staticmethod
     def _metric_defaults(user_query: str) -> dict | None:
         q = user_query or ""
+        if "在营门店" in q:
+            return {
+                "dataset": "order_full_data",
+                "metric": {"field": "store_name", "agg": "count", "alias": "在营门店数", "business_name": "在营门店数"},
+                "time_field": "order_create_date",
+                "non_null_field": "order_create_date",
+            }
         if "锁单" in q:
             return {
                 "dataset": "order_full_data",
@@ -354,6 +371,78 @@ class PlanningAgent:
                 "non_null_field": "intention_payment_time",
             }
         return None
+
+    @staticmethod
+    def _parse_fast_path_query(user_query: str) -> dict | None:
+        q = (user_query or "").strip()
+        if not q:
+            return None
+        iso_week_hint = any(k in q for k in ["第几周", "ISO周", "ISO 周", "isoweek", "iso week"])
+        has_today = any(k in q for k in ["今天", "今日", "当前日期"])
+        if iso_week_hint and has_today:
+            return {"type": "current_iso_week"}
+        if any(k in q for k in ["锁单", "交付", "开票", "门店", "线索", "试驾", "订单", "在营"]):
+            return None
+        has_compare_intent = any(k in q for k in ["环比", "同比", "提升", "增长", "下降", "减少", "涨幅", "降幅", "相比", "较", "比"])
+        has_ask = any(k in q for k in ["多少", "几", "百分比", "%", "百分点"])
+        if not (has_compare_intent and has_ask):
+            return None
+        nums = re.findall(r"-?\d+(?:\.\d+)?", q.replace(",", ""))
+        if len(nums) < 2:
+            return None
+        try:
+            current = float(nums[0])
+            base = float(nums[1])
+        except Exception:
+            return None
+        return {"type": "numeric_ratio", "current": current, "base": base}
+
+    @staticmethod
+    def _infer_series_tokens(user_query: str) -> list[str]:
+        q = (user_query or "").upper()
+        tokens: list[str] = []
+        for s in PlanningAgent._SERIES_CANDIDATES:
+            if s in q:
+                tokens.append(s)
+        return list(dict.fromkeys(tokens))
+
+    @staticmethod
+    def _has_field_filter(filters: list, fields: set[str]) -> bool:
+        for f in filters:
+            if not isinstance(f, dict):
+                continue
+            if str(f.get("field") or "") in fields:
+                return True
+        return False
+
+    @staticmethod
+    def _apply_semantic_filters(filters: list, user_query: str) -> list:
+        q = (user_query or "").replace(" ", "")
+        has_trial_metric_context = any(k in q for k in ["试驾率", "试驾数", "有效试驾"])
+        ask_trial_car = (("试驾车" in q) or ("试驾" in q and not has_trial_metric_context)) and not any(
+            k in q for k in ["非试驾车", "不是试驾车", "排除试驾", "不含试驾", "剔除试驾"]
+        )
+        ask_non_trial_car = any(k in q for k in ["非试驾车", "不是试驾车", "排除试驾", "不含试驾", "剔除试驾"])
+        ask_user_car = "用户车" in q
+
+        has_order_type_filter = PlanningAgent._has_field_filter(filters, {"order_type"})
+        if not has_order_type_filter:
+            if ask_trial_car and not ask_user_car:
+                filters.append({"field": "order_type", "op": "==", "value": "试驾车"})
+            elif ask_user_car and not ask_trial_car:
+                filters.append({"field": "order_type", "op": "==", "value": "用户车"})
+            elif ask_non_trial_car:
+                filters.append({"field": "order_type", "op": "!=", "value": "试驾车"})
+
+        has_series_filter = PlanningAgent._has_field_filter(filters, {"series", "product_name", "drive_series_cn", "belong_intent_series"})
+        if not has_series_filter:
+            series_tokens = PlanningAgent._infer_series_tokens(q)
+            if len(series_tokens) == 1:
+                filters.append({"field": "series", "op": "==", "value": series_tokens[0]})
+            elif len(series_tokens) > 1:
+                filters.append({"field": "series", "op": "in", "value": series_tokens})
+
+        return filters
 
     @staticmethod
     def _should_sales_clarify(user_query: str) -> bool:
@@ -957,6 +1046,20 @@ class PlanningAgent:
             if not PlanningAgent._statistics_plan_valid(statistics, plan):
                 plan["statistics"] = {}
 
+        fast_path = plan.get("fast_path")
+        if fast_path is not None and not isinstance(fast_path, dict):
+            plan["fast_path"] = {}
+        elif isinstance(fast_path, dict):
+            fp_type = fast_path.get("type")
+            if fp_type not in {"numeric_ratio", "current_iso_week"}:
+                plan["fast_path"] = {}
+            elif fp_type == "numeric_ratio":
+                try:
+                    fast_path["current"] = float(fast_path.get("current"))
+                    fast_path["base"] = float(fast_path.get("base"))
+                except Exception:
+                    plan["fast_path"] = {}
+
         return plan
 
     def _rule_based_plan(self, user_query: str) -> dict | None:
@@ -1032,6 +1135,26 @@ class PlanningAgent:
 
     def create_plans(self, user_query: str) -> list[dict]:
         parts = self._split_user_query(user_query) or [user_query]
+        fp = self._parse_fast_path_query(user_query)
+        if isinstance(fp, dict) and fp.get("type"):
+            return [
+                self._normalize_plan(
+                    {
+                        "question": user_query,
+                        "dataset": "order_full_data",
+                        "metric": {"field": "order_number", "agg": "count", "alias": "count", "business_name": "订单计数"},
+                        "time": {
+                            "field": "order_create_time",
+                            "start": datetime.date.today().isoformat(),
+                            "end": (datetime.date.today() + datetime.timedelta(days=1)).isoformat(),
+                        },
+                        "dimensions": [],
+                        "filters": [],
+                        "comparison": {"type": "none"},
+                        "fast_path": fp,
+                    }
+                )
+            ]
         for part in parts:
             if self._should_sales_clarify(part):
                 return [{"question": part, "clarification": self._sales_clarification(part)}]
@@ -1053,21 +1176,20 @@ class PlanningAgent:
                     "业务定义:\n"
                     f"{self.business_definition}\n\n"
                     "约束:\n"
-                    "- 规划 DSL 中 time.start/time.end 必须是 YYYY-MM-DD，且 end 为开区间。\n"
-                    "- 如果问题涉及同比/年同比，comparison.type = yoy；涉及跨窗口环比（非统计计数问题）时，comparison.type = wow。\n"
-                    "- 如果用户一句话包含多个子问题，请拆成多个 plan，按出现顺序返回。\n"
-                    "- 如果你拆了子问题，请为每个 plan 填写 question 字段用于回显。\n"
-                    "- 遇到歧义必须返回 clarification.need=true，而不是自行猜测。\n"
-                    "- 澄清规则与口径定义以 Schema 文档为准。\n"
-                    "- 锁单量的统计口径：order_number count 且 lock_time 非空，时间筛选基于 lock_time。\n"
-                    "- 若问题是时序统计类（如近N周、指定周内日、多少周下降），请在 plan.statistics 中输出 weekly_decline_ratio 配置；该类型表示单窗口内按周聚合后做周环比序列统计。\n"
-                    "- weekly_decline_ratio 必须包含: time_field/window_weeks/weekdays/numerator_metric/denominator_metric。\n"
-                    "- 若问题是阈值计数类（如近N日有多少天指标大于X），请在 plan.statistics 中输出 daily_threshold_count 配置。\n"
-                    "- daily_threshold_count 必须包含: time_field/window_days/op/threshold/value_metric。\n"
-                    "- 若问题是日均类（如近N日/近N天日均锁单数），请在 plan.statistics 中输出 daily_mean 配置。\n"
-                    "- daily_mean 必须包含: time_field/window_days/value_metric；其中 value_metric 对锁单量仍用 order_number count。\n"
-                    "- 若问题是分位类（如昨天锁单数在近N日中处于什么分位），请在 plan.statistics 中输出 daily_percentile_rank 配置。\n"
-                    "- daily_percentile_rank 必须包含: time_field/window_days/reference_date/value_metric。\n"
+                    "- 默认返回 1 个 plan；仅当用户明确包含多个子问题时才拆成多个 plan，并保持原顺序。\n"
+                    "- 每个 plan 必须填写 question 字段用于回显。\n"
+                    "- time.start/time.end 必须是 YYYY-MM-DD，且 end 为开区间。\n"
+                    "- 遇到歧义必须返回 clarification.need=true，禁止自行猜测。\n"
+                    "- 澄清规则与指标口径以 Schema 文档为准。\n"
+                    "- 锁单量口径：order_number count 且 lock_time 非空，时间筛选基于 lock_time。\n"
+                    "- 路由优先级：Fast Path > Operators > Comparison/Statistics/Query。\n"
+                    "- 纯数字比较问题（如“405环比382提升多少”）输出 fast_path={type:numeric_ratio,current,base}。\n"
+                    "- 日期周序问题（如“今天是第几周/ISO周数”）输出 fast_path={type:current_iso_week}。\n"
+                    "- 在营门店数问题优先走固定算子，plan.statistics 置空或不设置；时间字段优先 order_create_date。\n"
+                    "- 用户出现‘试驾车’时 filters 必须含 order_type == 试驾车；出现‘用户车’时必须含 order_type == 用户车。\n"
+                    "- 用户出现系列词（L6/L7/LS6/LS7/LS8/LS9）时，filters 应补充 series 约束。\n"
+                    "- 同比/年同比用 comparison.type=yoy；跨窗口环比（非统计计数）用 comparison.type=wow。\n"
+                    "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank，并补齐各自必需字段。\n"
                 ),
             },
             {"role": "user", "content": user_query},
@@ -1196,11 +1318,33 @@ class PlanningAgent:
             )
             if not has_non_null:
                 filters.append({"field": time_field, "op": "!=", "value": None})
+        if metric_defaults and (metric_defaults.get("metric") or {}).get("alias") == "在营门店数":
+            if isinstance(time, dict):
+                time["field"] = "order_create_date"
+                if not any(
+                    isinstance(f, dict) and f.get("field") == "order_create_date" and f.get("op") == "!=" and f.get("value") is None
+                    for f in filters
+                ):
+                    filters.append({"field": "order_create_date", "op": "!=", "value": None})
+            q = user_query or ""
+            if any(k in q for k in ["最大", "最高", "峰值", "最小", "最低"]):
+                dims = plan.get("dimensions")
+                if not isinstance(dims, list) or not dims:
+                    plan["dimensions"] = ["order_create_date"]
+                if isinstance(plan.get("statistics"), dict):
+                    plan["statistics"] = {}
+        filters = self._apply_semantic_filters(filters, user_query)
         plan["filters"] = filters
 
         comparison = plan.get("comparison")
         if not isinstance(comparison, dict) or comparison.get("type") not in {"none", "yoy", "wow"}:
             plan["comparison"] = {"type": self._parse_comparison_type(user_query)}
+
+        fast_path = self._parse_fast_path_query(user_query)
+        if fast_path:
+            plan["fast_path"] = fast_path
+        elif "fast_path" not in plan:
+            plan["fast_path"] = {}
 
         time = plan.get("time")
         if isinstance(time, dict):

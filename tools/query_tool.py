@@ -151,7 +151,7 @@ class QueryTool:
         return "未能从问题中匹配到字段，请在问题中包含明确字段名。"
 
     def execute_analysis_df(self, plan: dict) -> Union[pd.DataFrame, str]:
-        print(f"      [QueryTool] 接收到 DSL 计划: {json.dumps(plan, ensure_ascii=False)}")
+        print(f"[QueryTool] 接收到 DSL 计划: {json.dumps(plan, ensure_ascii=False)}")
 
         self._load_datasets()
         dataset_name = plan.get("dataset")

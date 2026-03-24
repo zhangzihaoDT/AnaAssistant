@@ -1,0 +1,1 @@
+from operators.registry import run_registered_operator

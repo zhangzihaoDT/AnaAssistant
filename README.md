@@ -21,10 +21,12 @@
 
 这是一个基于 **NL → Planning DSL → Execution DSL → Execution** 架构的智能数据分析 Agent。
 
-- **Planning Agent**：把自然语言转成结构化 `plans`（时间范围、过滤口径、比较类型、统计类型）。
+- **Planning Agent**：把自然语言转成结构化 `plan`（时间范围、过滤口径、比较类型、统计类型、fast_path）。
+- **Fast Path Tool**：处理纯数字比较类问题（如“405 环比 382 提升多少”），直接计算差值与涨跌幅。
 - **Query Tool**：执行基础查询 DSL（过滤、分组、聚合、排序）。
 - **Comparison Tool**：执行跨时间窗口对比（yoy/wow，双窗口对齐 + 差值 + 涨幅）。
 - **Statistics Tool**：执行单窗口统计后处理（周环比序列统计、周下降占比、日阈值计数、日均值、分位值排名）。
+- **Operators Layer**：承接强口径指标固定算子（如在营门店数），避免通用 DSL 口径漂移。
 - **Schema Aware**：规划阶段显式注入 schema 与业务定义，提高字段/指标映射准确性。
 - **Clarification Memory**：需要澄清时暂存上下文，下一轮自动合并后继续规划。
 
@@ -33,11 +35,14 @@
 ```text
 用户问题
   ↓
-PlanningAgent.create_plans()
+PlanningAgent.create_plan()
   ↓
-plans[]（含 dataset/metric/time/filters/comparison/statistics）
+plan（含 dataset/metric/time/filters/comparison/statistics/fast_path）
   ↓
-agent/agent_loop.py 按 plan 类型路由执行：
+agent/tool_router.py 路由执行：
+  - fast_path.type == numeric_ratio → FastPathTool（数字环比/同比直算）
+  - fast_path.type == current_iso_week → FastPathTool（当前日期 ISO 周数）
+  - 命中固定口径问题 → operators.registry（如 active_store）
   - comparison.type in {yoy,wow} → ComparisonTool（周序列场景复用共享算子）
   - statistics.type == weekly_decline_ratio → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
   - statistics.type == daily_threshold_count → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
@@ -160,7 +165,7 @@ AnalysisAgent 生成最终自然语言回答
 ## 机制说明（规划与兜底）
 
 - **规划流程**（LLM 优先 + 规则兜底）：
-  - 优先调用 LLM 输出 `plans`，再做规范化与合法性校验
+  - 优先调用 LLM 输出 `plan`，再做规范化与合法性校验
   - 对“日均/分位”等语义执行后处理修正（`_finalize_plans`），避免退化为累计查询
   - LLM 异常或输出不可用时，回退到规则规划分支
 - **统计类型细分**：
@@ -171,6 +176,10 @@ AnalysisAgent 生成最终自然语言回答
 - **plan 合法性校验**：
   - statistics 计划会在规范化阶段校验必要字段与语义
   - 不合法时会清空 `statistics`，避免误路由到错误统计分支
+- **路由优先级**：
+  - 先尝试 Fast Path（纯数字比较）
+  - 再尝试 Operators（固定算子）
+  - 未命中时进入 comparison / statistics / query 通用链路
 - **agent/tool_router.py 执行兜底**：
   - 执行 statistics 前校验输入 DataFrame 所需列
   - 列缺失或执行异常时返回结构化错误对象，不直接抛异常
@@ -270,8 +279,12 @@ print(answer)
   - `state.py`: Agent 状态管理（history/iteration/done/result_blocks）。
   - `tools/`: 工具导出层（与根目录 `tools/` 保持一致）。
   - `schema/`: schema 路径导出层（指向根目录 `schema/`）。
+- `operators/`: 固定算子层
+  - `registry.py`: 算子注册中心（按问题语义路由到固定算子）。
+  - `active_store.py`: 在营门店口径算子（30天活动窗口 + 开店日约束）。
 - `main.py`: 兼容入口（转发至 `agent.agent_loop.run_main_agent`）。
 - `tools/`: 工具库
+  - `fast_path_tool.py`: Fast Path 计算工具（纯数字比较直算）。
   - `query_tool.py`: 查询执行引擎（过滤、分组、聚合、排序）。
   - `comparison_tool.py`: 双窗口对比引擎（同比/周环比）。
   - `statistics_tool.py`: 序列统计引擎（weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank，结构化 JSON 输出）。

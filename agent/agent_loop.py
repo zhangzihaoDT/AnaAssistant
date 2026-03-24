@@ -201,12 +201,69 @@ def _generate_final_answer(client: OpenAI, user_query: str, result_blocks: list[
     return final_response.choices[0].message.content or ""
 
 
-def _build_finish_grounded_answer(action: dict) -> str:
+def _extract_result_text(result_block: str) -> str:
+    marker = "执行结果:\n"
+    text = str(result_block or "")
+    idx = text.find(marker)
+    if idx == -1:
+        return text.strip()
+    return text[idx + len(marker) :].strip()
+
+
+def _build_finish_grounded_answer(action: dict, last_result_block: str) -> str:
     reason = str(action.get("reason") or "").strip()
     analysis = str(action.get("analysis") or "").strip()
-    if reason and analysis:
-        return f"{reason}\n\n{analysis}"
-    return reason or analysis
+    result_text = _extract_result_text(last_result_block)
+    result_preview = _trim_text(result_text, limit=1600) if result_text else ""
+    narrative = "\n\n".join([p for p in [reason, analysis] if p])
+    if narrative and result_preview:
+        return f"{narrative}\n\n查询结果:\n{result_preview}"
+    if result_preview:
+        return f"查询结果:\n{result_preview}"
+    return narrative
+
+
+def _generate_finish_summary(client: OpenAI, user_query: str, action: dict, last_result_block: str) -> str:
+    result_text = _extract_result_text(last_result_block)
+    if not result_text:
+        return _build_finish_grounded_answer(action, last_result_block)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是严格的数据总结助手。只能基于给定查询结果回答。"
+                "必须给出明确结论、关键数字，并尽量列出明细。"
+                "如果问题是“哪些天/哪些项”，必须输出清单（可分点）。"
+                "禁止编造、禁止只复述过程。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"用户问题:\n{user_query}\n\n"
+                f"Finish reason:\n{str(action.get('reason') or '')}\n\n"
+                f"Finish analysis:\n{str(action.get('analysis') or '')}\n\n"
+                f"查询结果:\n{result_text}\n\n"
+                "请直接给最终回答。"
+            ),
+        },
+    ]
+    try:
+        response = client.chat.completions.create(model="deepseek-chat", messages=messages)
+        text = str(response.choices[0].message.content or "").strip()
+        if text:
+            return text
+    except Exception:
+        pass
+    return _build_finish_grounded_answer(action, last_result_block)
+
+
+def _format_execution_meta(meta: dict) -> str:
+    if not isinstance(meta, dict):
+        return "unknown"
+    engine = str(meta.get("engine") or "unknown")
+    route = str(meta.get("route") or "unknown")
+    return f"{engine}::{route}"
 
 
 def run_main_agent(user_query: str) -> str:
@@ -291,13 +348,22 @@ def run_main_agent(user_query: str) -> str:
                 break
 
             step_blocks = step_result.get("result_blocks") or []
+            execution_meta = step_result.get("execution_meta") or {}
+            print(f"[Loop] execution={_format_execution_meta(execution_meta)}")
             state.result_blocks.extend(step_blocks)
             merged_step_text = "\n\n---\n\n".join(step_blocks)
             state.add_step(action, _trim_text(merged_step_text))
         elif action.get("action") == "finish":
-            finish_grounded_answer = _build_finish_grounded_answer(action)
+            last_block = state.result_blocks[-1] if state.result_blocks else ""
+            finish_grounded_answer = _generate_finish_summary(
+                client=client,
+                user_query=user_query,
+                action=action,
+                last_result_block=last_block,
+            )
             state.add_step(action, _trim_text(str(action.get("analysis") or "完成")))
             state.done = True
+            print("[Loop] execution=finish::answer_summarization")
         else:
             state.add_step(action, "未知 action，终止。")
             state.done = True

@@ -2,6 +2,8 @@ from tools import CodeInterpreterTool
 from tools import CODE_INTERPRETER_SCHEMA
 from tools import COMPARISON_TOOL_SCHEMA
 from tools import ComparisonTool
+from tools import FAST_PATH_TOOL_SCHEMA
+from tools import FastPathTool
 from tools import QUERY_TOOL_SCHEMA
 from tools import QueryTool
 from tools import STATISTICS_TOOL_SCHEMA
