@@ -184,6 +184,8 @@ class PlanningAgent:
             "平均",
             "分位",
             "百分位",
+            "处于什么水平",
+            "什么水平",
         ]
         has_stat_keyword = any(k in q for k in stat_keywords)
         has_explicit_window = PlanningAgent._parse_time_window(q, datetime.date.today()) is not None
@@ -636,9 +638,10 @@ class PlanningAgent:
         if not q:
             return False
         has_percentile = any(k in q for k in ["分位", "百分位", "分位值", "百分位值"])
+        has_level = any(k in q for k in ["处于什么水平", "什么水平", "处于什么位置", "高低水平"])
         has_ref = any(k in q for k in ["昨天", "昨日", "今天", "今日"])
         has_recent_day = bool(re.search(r"近\s*\d+\s*(日|天)", q))
-        return has_percentile and has_ref and has_recent_day
+        return (has_percentile or has_level) and has_ref and has_recent_day
 
     @staticmethod
     def _extract_explicit_time_window(user_query: str, today: datetime.date) -> tuple[str, str] | None:

@@ -3,6 +3,7 @@ from lark_oapi.api.im.v1 import *
 import os
 import json
 import time
+import re
 from dotenv import load_dotenv
 from collections import deque
 from main import run_main_agent
@@ -74,6 +75,9 @@ class FeishuBot:
         # Skip if message is empty or from self (though events usually filter self)
         if not text:
             return
+        text = self._normalize_text(text)
+        if not text:
+            return
 
         print(f"\n[Feishu] Received message: {text}")
         
@@ -90,6 +94,11 @@ class FeishuBot:
             print(f"[Error] {answer}")
 
         self.reply(chat_id, answer)
+
+    def _normalize_text(self, text: str) -> str:
+        normalized = re.sub(r"@\S+", " ", str(text or ""))
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
 
     def reply(self, chat_id, text):
         request = (
