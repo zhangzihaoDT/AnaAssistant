@@ -11,6 +11,7 @@ def _execute_single_plan(
     query_tool: QueryTool,
     comparison_tool: ComparisonTool,
     statistics_tool: StatisticsTool,
+    memory_context: dict | None = None,
 ) -> dict:
     dataset = plan.get("dataset")
     metric = plan.get("metric", {}) or {}
@@ -44,7 +45,11 @@ def _execute_single_plan(
     comparison_df = None
     if isinstance(fast_path, dict) and fast_path.get("type"):
         execution_meta = {"engine": "fast_path", "route": f"fast_path.{str(fast_path.get('type'))}"}
-        tool_result = FastPathTool().run(config=fast_path, user_query=user_query)
+        tool_result = FastPathTool().run(
+            config=fast_path,
+            user_query=user_query,
+            memory_context=memory_context,
+        )
     operator_result = run_registered_operator(plan=plan, user_query=user_query, query_tool=query_tool)
     if operator_result is not None and tool_result is None:
         execution_meta = {
@@ -53,7 +58,7 @@ def _execute_single_plan(
         }
         print(f"[Route] 使用固定算子: {execution_meta['route']}")
         tool_result = operator_result
-    if comparison_type in {"yoy", "wow"}:
+    if comparison_type in {"yoy", "wow", "dod"}:
         if comparison_type == "wow" and stats_type == "weekly_decline_ratio":
             execution_meta = {"engine": "comparison", "route": "comparison.weekly_wow_series"}
             print("\n[Thinking] 执行共享周序列算子（Comparison → Weekly WoW Series）...")
@@ -403,9 +408,10 @@ def run_dsl_step(
     query_tool: QueryTool,
     comparison_tool: ComparisonTool,
     statistics_tool: StatisticsTool,
+    memory_context: dict | None = None,
 ) -> dict:
     print("\n[Thinking] PlanningAgent 正在构建执行规划并路由...")
-    plan = planning_agent.create_plan(action_query)
+    plan = planning_agent.create_plan(action_query, memory_context=memory_context)
     if not isinstance(plan, dict) or not plan:
         return {"status": "error", "message": "未能生成有效的规划 DSL。"}
 
@@ -424,6 +430,7 @@ def run_dsl_step(
         query_tool=query_tool,
         comparison_tool=comparison_tool,
         statistics_tool=statistics_tool,
+        memory_context=memory_context,
     )
     return {
         "status": "ok",

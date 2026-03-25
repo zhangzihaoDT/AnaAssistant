@@ -65,7 +65,7 @@ PLANNING_TOOL_SCHEMA = {
                             "comparison": {
                                 "type": "object",
                                 "properties": {
-                                    "type": {"type": "string", "enum": ["none", "yoy", "wow"]},
+                                    "type": {"type": "string", "enum": ["none", "yoy", "wow", "dod"]},
                                 },
                                 "required": ["type"],
                             },
@@ -116,7 +116,7 @@ PLANNING_TOOL_SCHEMA = {
                             "fast_path": {
                                 "type": "object",
                                 "properties": {
-                                    "type": {"type": "string", "enum": ["numeric_ratio", "current_iso_week"]},
+                                    "type": {"type": "string", "enum": ["numeric_ratio", "current_iso_week", "small_talk_contextual"]},
                                     "current": {"type": "number"},
                                     "base": {"type": "number"},
                                 },
@@ -152,6 +152,10 @@ class PlanningAgent:
     @staticmethod
     def _parse_comparison_type(user_query: str) -> str:
         q = user_query or ""
+        if "日环比" in q or "天环比" in q:
+            return "dod"
+        if ("昨天" in q or "昨日" in q or "今天" in q or "今日" in q) and ("环比" in q) and ("周环比" not in q):
+            return "dod"
         if "同比" in q or "年同比" in q:
             return "yoy"
         if "环比" in q or "周环比" in q:
@@ -379,6 +383,11 @@ class PlanningAgent:
         q = (user_query or "").strip()
         if not q:
             return None
+        q_lower = q.lower()
+        if any(k in q_lower for k in ["welldone", "well done", "good job", "nice", "great"]) or any(
+            k in q for k in ["你好", "您好", "在吗", "辛苦了", "谢谢", "感谢", "赞", "太棒了", "干得好", "厉害"]
+        ):
+            return {"type": "small_talk_contextual"}
         iso_week_hint = any(k in q for k in ["第几周", "ISO周", "ISO 周", "isoweek", "iso week"])
         has_today = any(k in q for k in ["今天", "今日", "当前日期"])
         if iso_week_hint and has_today:
@@ -995,7 +1004,7 @@ class PlanningAgent:
             plan["comparison"] = {"type": "none"}
         else:
             ctype = comparison.get("type")
-            if ctype not in {"none", "yoy", "wow"}:
+            if ctype not in {"none", "yoy", "wow", "dod"}:
                 plan["comparison"] = {"type": "none"}
 
         time = plan.get("time")
@@ -1054,7 +1063,7 @@ class PlanningAgent:
             plan["fast_path"] = {}
         elif isinstance(fast_path, dict):
             fp_type = fast_path.get("type")
-            if fp_type not in {"numeric_ratio", "current_iso_week"}:
+            if fp_type not in {"numeric_ratio", "current_iso_week", "small_talk_contextual"}:
                 plan["fast_path"] = {}
             elif fp_type == "numeric_ratio":
                 try:
@@ -1136,7 +1145,7 @@ class PlanningAgent:
             finalized.append(normalized)
         return [p for p in finalized if isinstance(p, dict) and p]
 
-    def create_plans(self, user_query: str) -> list[dict]:
+    def create_plans(self, user_query: str, memory_context: dict | None = None) -> list[dict]:
         parts = self._split_user_query(user_query) or [user_query]
         fp = self._parse_fast_path_query(user_query)
         if isinstance(fp, dict) and fp.get("type"):
@@ -1166,6 +1175,14 @@ class PlanningAgent:
                 return [{"question": part, "clarification": self._city_clarification(city, part)}]
 
         current_date = datetime.date.today().isoformat()
+        memory_context = memory_context if isinstance(memory_context, dict) else {}
+        memory_facts = memory_context.get("facts") if isinstance(memory_context.get("facts"), dict) else {}
+        memory_working = memory_context.get("working_memory") if isinstance(memory_context.get("working_memory"), dict) else {}
+        memory_text = (
+            "执行记忆:\n"
+            f"- 已有 facts: {json.dumps(memory_facts, ensure_ascii=False)}\n"
+            f"- 当前 working_memory: {json.dumps(memory_working, ensure_ascii=False)}\n\n"
+        )
         messages = [
             {
                 "role": "system",
@@ -1178,6 +1195,7 @@ class PlanningAgent:
                     f"{self.schema_md}\n\n"
                     "业务定义:\n"
                     f"{self.business_definition}\n\n"
+                    f"{memory_text}"
                     "约束:\n"
                     "- 默认返回 1 个 plan；仅当用户明确包含多个子问题时才拆成多个 plan，并保持原顺序。\n"
                     "- 每个 plan 必须填写 question 字段用于回显。\n"
@@ -1188,10 +1206,11 @@ class PlanningAgent:
                     "- 路由优先级：Fast Path > Operators > Comparison/Statistics/Query。\n"
                     "- 纯数字比较问题（如“405环比382提升多少”）输出 fast_path={type:numeric_ratio,current,base}。\n"
                     "- 日期周序问题（如“今天是第几周/ISO周数”）输出 fast_path={type:current_iso_week}。\n"
+                    "- 闲聊/致谢/鼓励问题（如 welldone、谢谢、辛苦了）输出 fast_path={type:small_talk_contextual}。\n"
                     "- 在营门店数问题优先走固定算子，plan.statistics 置空或不设置；时间字段优先 order_create_date。\n"
                     "- 用户出现‘试驾车’时 filters 必须含 order_type == 试驾车；出现‘用户车’时必须含 order_type == 用户车。\n"
                     "- 用户出现系列词（L6/L7/LS6/LS7/LS8/LS9）时，filters 应补充 series 约束。\n"
-                    "- 同比/年同比用 comparison.type=yoy；跨窗口环比（非统计计数）用 comparison.type=wow。\n"
+                    "- 同比/年同比用 comparison.type=yoy；周环比用 comparison.type=wow；日环比（如“昨天日环比”）用 comparison.type=dod。\n"
                     "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank，并补齐各自必需字段。\n"
                 ),
             },
@@ -1340,7 +1359,7 @@ class PlanningAgent:
         plan["filters"] = filters
 
         comparison = plan.get("comparison")
-        if not isinstance(comparison, dict) or comparison.get("type") not in {"none", "yoy", "wow"}:
+        if not isinstance(comparison, dict) or comparison.get("type") not in {"none", "yoy", "wow", "dod"}:
             plan["comparison"] = {"type": self._parse_comparison_type(user_query)}
 
         fast_path = self._parse_fast_path_query(user_query)
@@ -1357,8 +1376,8 @@ class PlanningAgent:
 
         return self._normalize_plan(plan)
 
-    def create_plan(self, user_query: str) -> dict:
-        plans = self.create_plans(user_query)
+    def create_plan(self, user_query: str, memory_context: dict | None = None) -> dict:
+        plans = self.create_plans(user_query, memory_context=memory_context)
         if plans:
             return plans[0]
         return {}
@@ -1385,7 +1404,9 @@ def plan_runtime_action(client: OpenAI, state: AgentRuntimeState) -> dict:
             "analysis": "开始围绕用户目标进行首轮查询。",
         }
 
-    history_payload = json.dumps(state.history, ensure_ascii=False)
+    history_payload = json.dumps(state.history[-3:], ensure_ascii=False)
+    facts_payload = json.dumps(state.facts, ensure_ascii=False)
+    working_payload = json.dumps(state.working_memory, ensure_ascii=False)
     messages = [
         {"role": "system", "content": LOOP_RUNTIME_SYSTEM_PROMPT},
         {
@@ -1393,6 +1414,8 @@ def plan_runtime_action(client: OpenAI, state: AgentRuntimeState) -> dict:
             "content": (
                 f"用户目标:\n{state.goal}\n\n"
                 f"已执行步数: {state.iteration}/{state.max_steps}\n"
+                f"已有 facts:\n{facts_payload}\n\n"
+                f"当前 working_memory:\n{working_payload}\n\n"
                 f"历史:\n{history_payload}\n\n"
                 "请输出下一步 JSON。"
             ),

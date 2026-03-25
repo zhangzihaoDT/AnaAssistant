@@ -22,7 +22,7 @@
 这是一个基于 **NL → Planning DSL → Execution DSL → Execution** 架构的智能数据分析 Agent。
 
 - **Planning Agent**：把自然语言转成结构化 `plan`（时间范围、过滤口径、比较类型、统计类型、fast_path）。
-- **Fast Path Tool**：处理纯数字比较类问题（如“405 环比 382 提升多少”），直接计算差值与涨跌幅。
+- **Fast Path Tool**：处理轻量直算问题（数字比较、ISO 周数、闲聊回复），减少重链路查询。
 - **Query Tool**：执行基础查询 DSL（过滤、分组、聚合、排序）。
 - **Comparison Tool**：执行跨时间窗口对比（yoy/wow，双窗口对齐 + 差值 + 涨幅）。
 - **Statistics Tool**：执行单窗口统计后处理（周环比序列统计、周下降占比、日阈值计数、日均值、分位值排名）。
@@ -42,8 +42,9 @@ plan（含 dataset/metric/time/filters/comparison/statistics/fast_path）
 agent/tool_router.py 路由执行：
   - fast_path.type == numeric_ratio → FastPathTool（数字环比/同比直算）
   - fast_path.type == current_iso_week → FastPathTool（当前日期 ISO 周数）
+  - fast_path.type == small_talk_contextual → FastPathTool（闲聊场景，结合近3轮 memory 回复）
   - 命中固定口径问题 → operators.registry（如 active_store）
-  - comparison.type in {yoy,wow} → ComparisonTool（周序列场景复用共享算子）
+  - comparison.type in {yoy,wow,dod} → ComparisonTool（支持同比/周环比/日环比；周序列场景复用共享算子）
   - statistics.type == weekly_decline_ratio → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
   - statistics.type == daily_threshold_count → QueryTool + StatisticsTool 或 ComparisonTool + StatisticsTool
   - statistics.type == daily_mean → QueryTool + StatisticsTool
@@ -70,7 +71,7 @@ AnalysisAgent 生成最终自然语言回答
 
 能力边界：
 
-- `ComparisonTool`：处理“当前窗口 vs 对比窗口”的双窗口对比（如本周 vs 上周、今年同月 vs 去年同月）。
+- `ComparisonTool`：处理“当前窗口 vs 对比窗口”的双窗口对比（支持 yoy/wow/dod；其中 dod 按单日对单日前一日）。
 - `StatisticsTool`：处理“单一窗口内部序列”的统计后处理（如近10周逐周 delta、下降周数占比）。
 - 当同一 plan 同时包含 `comparison` 与 `statistics` 时，执行器按“Comparison → Statistics”顺序串联。
 - `weekly_decline_ratio` 与 `comparison.type=wow` 通过共享周序列算子联动，先生成周序列环比，再统计下降周数占比。
@@ -181,6 +182,10 @@ AnalysisAgent 生成最终自然语言回答
   - 先尝试 Fast Path（纯数字比较）
   - 再尝试 Operators（固定算子）
   - 未命中时进入 comparison / statistics / query 通用链路
+- **Fast Path 类型**：
+  - `numeric_ratio`：数字比较直算
+  - `current_iso_week`：当前日期 ISO 周数
+  - `small_talk_contextual`：闲聊/致谢场景，结合近3轮历史问题回复
 - **agent/tool_router.py 执行兜底**：
   - 执行 statistics 前校验输入 DataFrame 所需列
   - 列缺失或执行异常时返回结构化错误对象，不直接抛异常
@@ -285,9 +290,9 @@ print(answer)
   - `active_store.py`: 在营门店口径算子（30天活动窗口 + 开店日约束）。
 - `main.py`: 兼容入口（转发至 `agent.agent_loop.run_main_agent`）。
 - `tools/`: 工具库
-  - `fast_path_tool.py`: Fast Path 计算工具（纯数字比较直算）。
+  - `fast_path_tool.py`: Fast Path 计算工具（numeric_ratio / current_iso_week / small_talk_contextual）。
   - `query_tool.py`: 查询执行引擎（过滤、分组、聚合、排序）。
-  - `comparison_tool.py`: 双窗口对比引擎（同比/周环比）。
+  - `comparison_tool.py`: 双窗口对比引擎（同比/周环比/日环比）。
   - `statistics_tool.py`: 序列统计引擎（weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank，结构化 JSON 输出）。
   - `time_tool.py`: 时间查询工具。
   - `code_interpreter.py`: 代码解释器工具。

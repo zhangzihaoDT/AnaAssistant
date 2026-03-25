@@ -6,6 +6,7 @@ import datetime
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from agent.memory_extractor import apply_memory_update, extract_memory_update
 from agent.planner import PlanningAgent, plan_runtime_action
 from agent.schema import DATA_PATH_FILE, SCHEMA_DIR
 from agent.state import AgentRuntimeState
@@ -41,7 +42,12 @@ def _load_memory() -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             obj = json.load(f)
-        return obj if isinstance(obj, dict) else {}
+        if not isinstance(obj, dict):
+            return {}
+        if "recent_user_queries" in obj:
+            obj.pop("recent_user_queries", None)
+            _save_memory(obj)
+        return obj
     except Exception:
         return {}
 
@@ -62,6 +68,13 @@ def _clear_memory() -> None:
             os.remove(path)
     except Exception:
         pass
+
+
+def _clear_pending(memory: dict) -> None:
+    if not isinstance(memory, dict):
+        return
+    memory.pop("pending", None)
+    _save_memory(memory)
 
 
 def _merge_pending_context(user_query: str, memory: dict) -> str | None:
@@ -279,12 +292,12 @@ def run_main_agent(user_query: str) -> str:
     ):
         merged = _merge_pending_context(user_query, memory)
     if merged:
-        _clear_memory()
+        _clear_pending(memory)
         user_query = merged
         print(f"\n{'='*60}")
         print("已合并上一轮澄清上下文，继续规划...")
     elif memory.get("pending") and _looks_like_new_question(user_query):
-        _clear_memory()
+        _clear_pending(memory)
 
     api_key = _load_api_key()
     if not api_key:
@@ -320,6 +333,11 @@ def run_main_agent(user_query: str) -> str:
                 query_tool=query_tool,
                 comparison_tool=comparison_tool,
                 statistics_tool=statistics_tool,
+                memory_context={
+                    "facts": state.facts,
+                    "working_memory": state.working_memory,
+                    "execution_log": memory.get("execution_log") if isinstance(memory, dict) else [],
+                },
             )
             status = step_result.get("status")
             if status == "clarification":
@@ -353,6 +371,8 @@ def run_main_agent(user_query: str) -> str:
             state.result_blocks.extend(step_blocks)
             merged_step_text = "\n\n---\n\n".join(step_blocks)
             state.add_step(action, _trim_text(merged_step_text))
+            memory_update = extract_memory_update(client=client, state=state, last_result=merged_step_text)
+            apply_memory_update(state, memory_update)
         elif action.get("action") == "finish":
             last_block = state.result_blocks[-1] if state.result_blocks else ""
             finish_grounded_answer = _generate_finish_summary(

@@ -9,3 +9,4 @@ out/**
 !out/**/*.md
 !out/**/*.py
 schema/
+agent/.query_agent_memory.json

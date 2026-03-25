@@ -24,7 +24,7 @@ class ComparisonTool:
         if not dataset or not metrics or not time_field or not current_start or not current_end:
             return "对比分析缺少必要参数: dataset/metrics/time.field/time.start/time.end"
 
-        if comparison_type not in {"yoy", "wow"}:
+        if comparison_type not in {"yoy", "wow", "dod"}:
             return f"不支持的对比类型: {comparison_type}"
 
         current_start_ts = pd.Timestamp(current_start)
@@ -33,9 +33,13 @@ class ComparisonTool:
         if comparison_type == "yoy":
             compare_start_ts = current_start_ts - pd.DateOffset(years=1)
             compare_end_ts = current_end_ts - pd.DateOffset(years=1)
-        else:
+        elif comparison_type == "wow":
             compare_start_ts = current_start_ts - pd.Timedelta(days=7)
             compare_end_ts = current_end_ts - pd.Timedelta(days=7)
+        else:
+            current_start_ts = current_end_ts - pd.Timedelta(days=1)
+            compare_start_ts = current_start_ts - pd.Timedelta(days=1)
+            compare_end_ts = current_start_ts
 
         current_plan = {
             "dataset": dataset,
@@ -222,7 +226,7 @@ COMPARISON_TOOL_SCHEMA = {
                 "comparison": {
                     "type": "object",
                     "properties": {
-                        "type": {"type": "string", "enum": ["yoy", "wow"]},
+                        "type": {"type": "string", "enum": ["yoy", "wow", "dod"]},
                     },
                     "required": ["type"],
                 },

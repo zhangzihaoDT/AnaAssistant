@@ -64,6 +64,18 @@ def _try_parse_datetime_value(value: object) -> pd.Timestamp | None:
     return None
 
 
+def _try_parse_numeric_series(series: pd.Series) -> pd.Series | None:
+    if not isinstance(series, pd.Series) or series.empty:
+        return None
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+    raw = series.astype(str).str.replace(",", "", regex=False).str.replace("%", "", regex=False).str.strip()
+    parsed = pd.to_numeric(raw, errors="coerce")
+    if float(parsed.notna().mean()) >= 0.8:
+        return parsed
+    return None
+
+
 class QueryTool:
     def __init__(self, data_path_file: str, schema_dir: str):
         self.data_path_file = Path(data_path_file)
@@ -168,7 +180,7 @@ class QueryTool:
             elif dataset_name not in self.datasets:
                 return f"找不到数据集: {dataset_name}。可用数据集: {list(self.datasets.keys())}"
 
-        df = self.datasets[dataset_name]
+        df = self.datasets[dataset_name].copy()
 
         filters = plan.get("filters", [])
         for f in filters:
@@ -192,6 +204,18 @@ class QueryTool:
                         df = df[s >= v]
                     elif op == "<=":
                         df = df[s <= v]
+                    continue
+
+            if op in {"==", "!="}:
+                parsed_series = _try_parse_datetime_series(df[field])
+                parsed_value = _try_parse_datetime_value(value)
+                if parsed_series is not None and parsed_value is not None:
+                    s = parsed_series
+                    v = parsed_value
+                    if op == "==":
+                        df = df[s == v]
+                    else:
+                        df = df[s != v]
                     continue
 
             if op == "==":
@@ -236,6 +260,11 @@ class QueryTool:
 
                 if not field or field not in df.columns:
                     continue
+
+                if isinstance(agg_func, str) and agg_func in {"sum", "mean", "min", "max"}:
+                    numeric_series = _try_parse_numeric_series(df[field])
+                    if numeric_series is not None:
+                        df[field] = numeric_series
 
                 if field in agg_dict:
                     existing = agg_dict[field]
