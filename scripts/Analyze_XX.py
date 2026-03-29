@@ -12,6 +12,7 @@ import statsmodels.api as sm
 
 DATA_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_summary_daily_matrix_2024-01-01_to_yesterday.csv")
 BUSINESS_DEFINITION_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/business_definition.json")
+DATA_PATH_MD_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/data_path.md")
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_OUTPUT = SCRIPT_DIR / "reports/analyze_xx.html"
 TARGET_LEADS_METRIC = "下发线索转化率.下发线索数"
@@ -40,6 +41,7 @@ STORE_30D_RATE_CANDIDATES = [
     "下发线索转化率.下发线索数（门店）30日锁单率",
 ]
 START_DATE = pd.Timestamp("2025-01-01")
+REGION_SHARE_START_DATE = pd.Timestamp("2025-06-01")
 
 COLORS = {
     "primary": "#3498DB",
@@ -100,6 +102,30 @@ def load_metric_frame(csv_path: Path) -> pd.DataFrame:
     if "metric" not in raw.columns:
         raise ValueError("矩阵 CSV 缺少 metric 列")
     return raw.set_index("metric")
+
+
+def resolve_dataset_path(label: str, md_path: Path) -> Path:
+    if not md_path.exists():
+        raise FileNotFoundError(f"文件不存在: {md_path}")
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    for line in lines:
+        row = str(line).strip()
+        if not row:
+            continue
+        if "：" in row:
+            left, right = row.split("：", 1)
+        elif ":" in row:
+            left, right = row.split(":", 1)
+        else:
+            continue
+        if left.strip() != label:
+            continue
+        raw_path = right.strip().replace("\\_", "_").replace("\\*", "*")
+        resolved = Path(raw_path).expanduser().resolve()
+        if not resolved.exists():
+            raise FileNotFoundError(f"{label} 数据文件不存在: {resolved}")
+        return resolved
+    raise ValueError(f"在 {md_path} 中未找到数据标签: {label}")
 
 
 def load_metric_series(metric_df: pd.DataFrame, metric_name: str, value_parser, fillna_value: float) -> pd.DataFrame:
@@ -241,9 +267,65 @@ def load_lock_orders_layered_frame(metric_df: pd.DataFrame) -> pd.DataFrame:
     return merged[["date", "lock_orders", "target_30d_rate", "store_daily_leads"]]
 
 
+def load_monthly_region_lock_share_frame(md_path: Path) -> pd.DataFrame:
+    order_path = resolve_dataset_path(label="订单表", md_path=md_path)
+    cols = ["lock_time", "parent_region_name", "order_number"]
+    try:
+        order_df = pd.read_parquet(order_path, columns=cols)
+    except Exception:
+        order_df = pd.read_parquet(order_path)
+    if "lock_time" not in order_df.columns or "order_number" not in order_df.columns:
+        raise ValueError("订单表缺少 lock_time 或 order_number 字段")
+    working = order_df.copy()
+    working["lock_time"] = pd.to_datetime(working["lock_time"], errors="coerce")
+    end_exclusive = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
+    working = working[(working["lock_time"] >= REGION_SHARE_START_DATE) & (working["lock_time"] < end_exclusive)].copy()
+    if working.empty:
+        return pd.DataFrame(columns=["month", "region", "lock_orders", "share"])
+    if "parent_region_name" in working.columns:
+        working["region"] = working["parent_region_name"].astype("string").fillna("未知大区").str.strip()
+        working["region"] = working["region"].replace("", "未知大区")
+    else:
+        working["region"] = "未知大区"
+    region_norm = (
+        working["region"]
+        .astype("string")
+        .fillna("")
+        .str.replace(r"\s+", "", regex=True)
+        .str.upper()
+    )
+    excluded_region_mask = region_norm.isin(["虚拟大区", "FAC大区"])
+    working = working[~excluded_region_mask].copy()
+    if working.empty:
+        return pd.DataFrame(columns=["month", "region", "lock_orders", "share"])
+    working["order_number"] = working["order_number"].astype("string")
+    working["month"] = working["lock_time"].dt.to_period("M").dt.to_timestamp()
+    grouped = (
+        working.dropna(subset=["order_number"])
+        .groupby(["month", "region"], as_index=False)["order_number"]
+        .nunique()
+        .rename(columns={"order_number": "lock_orders"})
+    )
+    if grouped.empty:
+        return pd.DataFrame(columns=["month", "region", "lock_orders", "share"])
+    month_index = pd.date_range(grouped["month"].min(), grouped["month"].max(), freq="MS")
+    region_order = (
+        grouped.groupby("region", as_index=False)["lock_orders"]
+        .sum()
+        .sort_values("lock_orders", ascending=False)["region"]
+        .tolist()
+    )
+    full_idx = pd.MultiIndex.from_product([month_index, region_order], names=["month", "region"])
+    grouped = grouped.set_index(["month", "region"]).reindex(full_idx, fill_value=0).reset_index()
+    grouped["lock_orders"] = grouped["lock_orders"].astype(float)
+    month_total = grouped.groupby("month")["lock_orders"].transform("sum")
+    grouped["share"] = (grouped["lock_orders"] / month_total.replace(0, pd.NA)).fillna(0.0)
+    return grouped.sort_values(["month", "region"]).reset_index(drop=True)
+
+
 def load_all_series(
     csv_path: Path,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     metric_df = load_metric_frame(csv_path)
     leads = load_leads_series(metric_df)
     store_daily_leads = load_store_daily_leads_series(metric_df)
@@ -252,7 +334,8 @@ def load_all_series(
     store_corr = load_store_rate_correlation_frame(metric_df)
     multivar = load_multivariate_backtest_frame(metric_df)
     lock_orders_layered = load_lock_orders_layered_frame(metric_df)
-    return leads, store_daily_leads, conv30, store_daily_vs_30d_corr, store_corr, multivar, lock_orders_layered
+    monthly_region_lock_share = load_monthly_region_lock_share_frame(DATA_PATH_MD_FILE)
+    return leads, store_daily_leads, conv30, store_daily_vs_30d_corr, store_corr, multivar, lock_orders_layered, monthly_region_lock_share
 
 
 def load_business_time_points(json_path: Path) -> pd.DataFrame:
@@ -833,6 +916,41 @@ def module_lock_orders_layered_dual_axis(data: pd.DataFrame) -> str:
     return pio.to_html(fig, full_html=False, include_plotlyjs="cdn")
 
 
+def module_monthly_region_lock_share(data: pd.DataFrame) -> str:
+    if data.empty:
+        return "<p>2025-06 至今无可用锁单数据。</p>"
+    df = data.copy()
+    df["month"] = pd.to_datetime(df["month"], errors="coerce")
+    df = df.dropna(subset=["month", "region"]).copy()
+    if df.empty:
+        return "<p>2025-06 至今无可用锁单数据。</p>"
+    month_values = sorted(df["month"].dropna().unique().tolist())
+    region_order = (
+        df.groupby("region", as_index=False)["lock_orders"]
+        .sum()
+        .sort_values("lock_orders", ascending=False)["region"]
+        .astype(str)
+        .tolist()
+    )
+    share_pivot = (
+        df.pivot_table(index="region", columns="month", values="share", aggfunc="sum", fill_value=0.0)
+        .reindex(index=region_order, columns=month_values)
+        .fillna(0.0)
+    )
+    month_labels = [pd.Timestamp(c).strftime("%Y-%m") for c in share_pivot.columns]
+    table_df = share_pivot.copy()
+    table_df.columns = month_labels
+    table_df.index = table_df.index.astype(str)
+    table_df.index.name = "大区"
+    header_html = "<tr><th>大区</th>" + "".join([f"<th>{m}</th>" for m in month_labels]) + "</tr>"
+    rows_html = []
+    for region, row in table_df.iterrows():
+        month_cells = "".join([f"<td>{float(row[m]):.1%}</td>" for m in month_labels])
+        rows_html.append(f"<tr><td>{region}</td>{month_cells}</tr>")
+    title = "2025-06 至今月度占比明细"
+    return f"<h3>{title}</h3><table class='table'><thead>{header_html}</thead><tbody>{''.join(rows_html)}</tbody></table>"
+
+
 def generate_report(
     leads_data: pd.DataFrame,
     store_daily_leads_data: pd.DataFrame,
@@ -841,6 +959,7 @@ def generate_report(
     store_corr_data: pd.DataFrame,
     multivar_data: pd.DataFrame,
     lock_orders_layered_data: pd.DataFrame,
+    monthly_region_lock_share_data: pd.DataFrame,
     output_file: Path,
 ) -> None:
     css = """
@@ -866,6 +985,7 @@ def generate_report(
         ("6. 门店当日锁单率趋势", module_store_same_day_lock_rate_trend, store_corr_data),
         ("7. 多元数据回测与分位状态识别", module_multivariate_backtest, multivar_data),
         ("8. 锁单数分层双轴分析", module_lock_orders_layered_dual_axis, lock_orders_layered_data),
+        ("9. 各大区月度锁单量占比（表格）", module_monthly_region_lock_share, monthly_region_lock_share_data),
     ]
     html = [
         "<!DOCTYPE html>",
@@ -897,7 +1017,7 @@ def main() -> None:
     output_path = Path(str(args.output)).expanduser().resolve()
     if not csv_path.exists():
         raise FileNotFoundError(f"文件不存在: {csv_path}")
-    leads_data, store_daily_leads_data, conv30_data, store_daily_vs_30d_corr_data, store_corr_data, multivar_data, lock_orders_layered_data = load_all_series(csv_path)
+    leads_data, store_daily_leads_data, conv30_data, store_daily_vs_30d_corr_data, store_corr_data, multivar_data, lock_orders_layered_data, monthly_region_lock_share_data = load_all_series(csv_path)
     if leads_data.empty or store_daily_leads_data.empty or conv30_data.empty or store_daily_vs_30d_corr_data.empty or store_corr_data.empty or multivar_data.empty or lock_orders_layered_data.empty:
         raise ValueError("可视化数据为空")
     generate_report(
@@ -908,6 +1028,7 @@ def main() -> None:
         store_corr_data,
         multivar_data,
         lock_orders_layered_data,
+        monthly_region_lock_share_data,
         output_path,
     )
     print(str(output_path))

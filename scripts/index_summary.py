@@ -587,6 +587,8 @@ def _calc_assign_metrics(
 
     leads_live = _sum_any(["下发线索数（直播）", "下发线索数（直播)", "下发线索数 (直播)", "下发线索数 (直播)"])
     leads_platform = _sum_any(["下发线索数（平台)", "下发线索数（平台）", "下发线索数 (平台)", "下发线索数 (平台)"])
+    leads_app = _sum_any(["下发线索数（APP小程序)", "下发线索数（APP小程序）", "下发线索数 (APP小程序)", "下发线索数 (APP小程序)"])
+    leads_flash = _sum_any(["下发线索数（快慢闪)", "下发线索数（快慢闪）", "下发线索数 (快慢闪)", "下发线索数 (快慢闪)"])
 
     lock7_store = _sum_any(["下发线索 7 日锁单数 (门店)", "下发线索 7日锁单数 (门店)", "下发线索7日锁单数 (门店)"])
     lock7_live = _sum_any(["下发线索 7 日锁单数 (直播)", "下发线索 7日锁单数 (直播)", "下发线索7日锁单数 (直播)"])
@@ -595,6 +597,8 @@ def _calc_assign_metrics(
     lock30_store = _sum_any(["下发线索 30 日锁单数 (门店)", "下发线索 30日锁单数 (门店)", "下发线索30日锁单数 (门店)"])
     lock30_live = _sum_any(["下发线索 30 日锁单数 (直播)", "下发线索 30日锁单数 (直播)", "下发线索30日锁单数 (直播)"])
     lock30_platform = _sum_any(["下发线索 30 日锁单数 (平台)", "下发线索 30日锁单数 (平台)", "下发线索30日锁单数 (平台)"])
+    lock30_app = _sum_any(["下发线索 30 日锁单数 (APP小程序)", "下发线索 30日锁单数 (APP小程序)", "下发线索30日锁单数 (APP小程序)"])
+    lock30_flash = _sum_any(["下发线索 30 日锁单数 (快慢闪)", "下发线索 30日锁单数 (快慢闪)", "下发线索30日锁单数 (快慢闪)"])
 
     lock0_rate_denom = store_leads if store_leads > 0 else leads
 
@@ -603,6 +607,8 @@ def _calc_assign_metrics(
         "下发线索数 (门店)": store_leads,
         "下发线索数（直播）": leads_live,
         "下发线索数（平台)": leads_platform,
+        "下发线索数（APP小程序)": leads_app,
+        "下发线索数（快慢闪)": leads_flash,
         "下发线索当日试驾数": td0,
         "下发 (门店)线索当日锁单数": lock0,
         "下发线索 7 日锁单数": lock7,
@@ -619,6 +625,8 @@ def _calc_assign_metrics(
         "下发线索数（门店)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_store, store_leads)),
         "下发线索数（直播)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_live, leads_live)),
         "下发线索数（平台)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_platform, leads_platform)),
+        "下发线索数（APP小程序)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_app, leads_app)),
+        "下发线索数（快慢闪)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_flash, leads_flash)),
     }
 
     if lock0_source is not None:
@@ -837,6 +845,8 @@ def _calc_assign_metrics_from_df(
 
     leads_live = _sum_any(["下发线索数（直播）", "下发线索数（直播)", "下发线索数 (直播)", "下发线索数 (直播)"])
     leads_platform = _sum_any(["下发线索数（平台)", "下发线索数（平台）", "下发线索数 (平台)", "下发线索数 (平台)"])
+    leads_app = _sum_any(["下发线索数（APP小程序)", "下发线索数（APP小程序）", "下发线索数 (APP小程序)", "下发线索数 (APP小程序)"])
+    leads_flash = _sum_any(["下发线索数（快慢闪)", "下发线索数（快慢闪）", "下发线索数 (快慢闪)", "下发线索数 (快慢闪)"])
 
     lock7_store = _sum_any(["下发线索 7 日锁单数 (门店)", "下发线索 7日锁单数 (门店)", "下发线索7日锁单数 (门店)"])
     lock7_live = _sum_any(["下发线索 7 日锁单数 (直播)", "下发线索 7日锁单数 (直播)", "下发线索7日锁单数 (直播)"])
@@ -845,6 +855,8 @@ def _calc_assign_metrics_from_df(
     lock30_store = _sum_any(["下发线索 30 日锁单数 (门店)", "下发线索 30日锁单数 (门店)", "下发线索30日锁单数 (门店)"])
     lock30_live = _sum_any(["下发线索 30 日锁单数 (直播)", "下发线索 30日锁单数 (直播)", "下发线索30日锁单数 (直播)"])
     lock30_platform = _sum_any(["下发线索 30 日锁单数 (平台)", "下发线索 30日锁单数 (平台)", "下发线索30日锁单数 (平台)"])
+    lock30_app = _sum_any(["下发线索 30 日锁单数 (APP小程序)", "下发线索 30日锁单数 (APP小程序)", "下发线索30日锁单数 (APP小程序)"])
+    lock30_flash = _sum_any(["下发线索 30 日锁单数 (快慢闪)", "下发线索 30日锁单数 (快慢闪)", "下发线索30日锁单数 (快慢闪)"])
 
     lock0_rate_denom = store_leads if store_leads > 0 else leads
 
@@ -853,6 +865,8 @@ def _calc_assign_metrics_from_df(
         "下发线索数 (门店)": store_leads,
         "下发线索数（直播）": leads_live,
         "下发线索数（平台)": leads_platform,
+        "下发线索数（APP小程序)": leads_app,
+        "下发线索数（快慢闪)": leads_flash,
         "下发线索当日试驾数": td0,
         "下发 (门店)线索当日锁单数": lock0,
         "下发线索 7 日锁单数": lock7,
@@ -869,6 +883,8 @@ def _calc_assign_metrics_from_df(
         "下发线索数（门店)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_store, store_leads)),
         "下发线索数（直播)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_live, leads_live)),
         "下发线索数（平台)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_platform, leads_platform)),
+        "下发线索数（APP小程序)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_app, leads_app)),
+        "下发线索数（快慢闪)30日锁单率": _to_percent_1dp(_safe_ratio(lock30_flash, leads_flash)),
     }
 
     if lock0_source is not None:

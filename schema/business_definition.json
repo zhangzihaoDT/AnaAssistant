@@ -32,7 +32,7 @@
     },
     "LS8": {
       "start": "2026-03-26",
-      "end": "2026-04-12",
+      "end": "2026-04-16",
       "finish": "2026-05-16"
     }
   },
@@ -61,6 +61,7 @@
     "CM0": "product_name LIKE '%LS6%' AND product_name NOT LIKE '%全新%' AND product_name NOT LIKE '%新一代%'",
     "DM1": "product_name LIKE '%全新%' AND product_name LIKE '%L6%'",
     "DM0": "product_name LIKE '%L6%' AND product_name NOT LIKE '%全新%'",
+    "LS8": "product_name LIKE '%LS8%'",
     "LS9": "product_name LIKE '%LS9%'",
     "LS7": "product_name LIKE '%LS7%'",
     "L7": "product_name LIKE '%L7%'",
