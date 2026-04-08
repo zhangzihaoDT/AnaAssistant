@@ -71,5 +71,24 @@
     "LS6": ["CM0", "CM1", "CM2"],
     "L6": ["DM0", "DM1"]
   },
+  "configuration": {
+    "EXCOLOR": "外饰颜色",
+    "INCOLOR": "内饰颜色",
+    "OP-FH": "地暖",
+    "OP-LASER": "激光雷达/高阶智驾",
+    "OP-SW": "方向盘",
+    "OP-Screen": "二排娱乐屏",
+    "OP-Steer": "线控转向",
+    "WHEEL": "轮毂",
+    "OP-FRIDGE": "车载冰箱",
+    "OP-Hitch": "拖车钩",
+    "OP-Air-CDC": "空气悬架/CDC",
+    "OP-LuxGift": "豪华赠礼",
+    "intention_pay_time": "意向支付时间",
+    "lock_time": "锁单时间",
+    "Is Staff": "是否员工单",
+    "Product Name": "产品名称",
+    "Product_Types": "产品类型"
+  },
   "age_limit": [18, 80]
 }
