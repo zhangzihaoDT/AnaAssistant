@@ -425,7 +425,7 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
         date = _parse_date(date_str)
         if date is None:
             continue
-        lock_raw = metric_map.get("订单表.锁单数", [None] * len(columns))
+        lock_raw = metric_map.get("订单分析.锁单数", [None] * len(columns))
         leads_raw = metric_map.get("下发线索转化率.下发线索数", [None] * len(columns))
         leads_store_raw = metric_map.get("下发线索转化率.下发线索数 (门店)", [None] * len(columns))
         store_lock0_rate_raw = metric_map.get("下发线索转化率.下发 (门店)线索当日锁单率", [None] * len(columns))
@@ -435,8 +435,8 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
         store_share_raw = metric_map.get("下发线索转化率.门店线索占比", [None] * len(columns))
         leads_live_raw = metric_map.get("下发线索转化率.下发线索数（直播）", [None] * len(columns))
         leads_platform_raw = metric_map.get("下发线索转化率.下发线索数（平台)", [None] * len(columns))
-        cr5_store_raw = metric_map.get("订单表.CR5门店销量集中度", [None] * len(columns))
-        cr5_city_raw = metric_map.get("订单表.CR5门店城市销量集中度", [None] * len(columns))
+        cr5_store_raw = metric_map.get("订单分析.CR5门店销量集中度", [None] * len(columns))
+        cr5_city_raw = metric_map.get("订单分析.CR5门店城市销量集中度", [None] * len(columns))
         lock_value = lock_raw[idx] if idx < len(lock_raw) else None
         leads_value = leads_raw[idx] if idx < len(leads_raw) else None
         leads_store_value = leads_store_raw[idx] if idx < len(leads_store_raw) else None
@@ -470,7 +470,7 @@ def _rows_from_matrix(matrix: dict[str, object]) -> list[dict[str, object]]:
 
 
 def _row_from_day_json(day_obj: dict[str, object]) -> dict[str, object]:
-    order = day_obj.get("订单表") if isinstance(day_obj.get("订单表"), dict) else {}
+    order = day_obj.get("订单分析") if isinstance(day_obj.get("订单分析"), dict) else {}
     assign = day_obj.get("下发线索转化率") if isinstance(day_obj.get("下发线索转化率"), dict) else {}
     return {
         "date": str(day_obj.get("date")),
@@ -800,7 +800,7 @@ def _load_input_json(path: Path | None) -> dict[str, object]:
 def _detect_scope(payload: dict[str, object], preferred_scope: str) -> str:
     if preferred_scope in {"day", "interval"}:
         return preferred_scope
-    if isinstance(payload.get("date"), str) and isinstance(payload.get("订单表"), dict):
+    if isinstance(payload.get("date"), str) and isinstance(payload.get("订单分析"), dict):
         return "day"
     if isinstance(payload.get("start"), str) and isinstance(payload.get("end"), str):
         return "interval"

@@ -173,8 +173,8 @@ class QueryTool:
             if not dataset_name:
                 if "assign_data" in self.datasets:
                     dataset_name = "assign_data"
-                elif "order_full_data" in self.datasets:
-                    dataset_name = "order_full_data"
+                elif "order_data" in self.datasets:
+                    dataset_name = "order_data"
                 else:
                     dataset_name = list(self.datasets.keys())[0]
             elif dataset_name not in self.datasets:
@@ -341,7 +341,7 @@ QUERY_TOOL_SCHEMA = {
                     "properties": {
                         "dataset": {
                             "type": "string",
-                            "description": "数据集名称 (e.g. 'assign_data', 'order_full_data')"
+                            "description": "数据集名称 (e.g. 'assign_data', 'order_data')"
                         },
                         "metrics": {
                             "type": "array",

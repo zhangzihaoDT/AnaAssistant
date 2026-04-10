@@ -336,42 +336,42 @@ class PlanningAgent:
         q = user_query or ""
         if "在营门店" in q:
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "store_name", "agg": "count", "alias": "在营门店数", "business_name": "在营门店数"},
                 "time_field": "order_create_date",
                 "non_null_field": "order_create_date",
             }
         if "锁单" in q:
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "order_number", "agg": "count", "alias": "锁单数", "business_name": "锁单量"},
                 "time_field": "lock_time",
                 "non_null_field": "lock_time",
             }
         if "交付" in q:
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "order_number", "agg": "count", "alias": "交付数", "business_name": "交付数"},
                 "time_field": "delivery_date",
                 "non_null_field": "delivery_date",
             }
         if "开票金额" in q or ("开票" in q and "金额" in q):
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "invoice_amount", "agg": "sum", "alias": "开票金额", "business_name": "开票金额"},
                 "time_field": "invoice_upload_time",
                 "non_null_field": "invoice_upload_time",
             }
         if "开票" in q:
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "order_number", "agg": "count", "alias": "开票数", "business_name": "开票数"},
                 "time_field": "invoice_upload_time",
                 "non_null_field": "invoice_upload_time",
             }
         if "小订" in q or "意向金" in q:
             return {
-                "dataset": "order_full_data",
+                "dataset": "order_data",
                 "metric": {"field": "order_number", "agg": "count", "alias": "小订数", "business_name": "小订数"},
                 "time_field": "intention_payment_time",
                 "non_null_field": "intention_payment_time",
@@ -1153,7 +1153,7 @@ class PlanningAgent:
                 self._normalize_plan(
                     {
                         "question": user_query,
-                        "dataset": "order_full_data",
+                        "dataset": "order_data",
                         "metric": {"field": "order_number", "agg": "count", "alias": "count", "business_name": "订单计数"},
                         "time": {
                             "field": "order_create_time",
@@ -1309,7 +1309,7 @@ class PlanningAgent:
         default_end = today.isoformat()
 
         if not plan.get("dataset"):
-            plan["dataset"] = metric_defaults["dataset"] if metric_defaults else "order_full_data"
+            plan["dataset"] = metric_defaults["dataset"] if metric_defaults else "order_data"
 
         metric = plan.get("metric")
         if not isinstance(metric, dict):

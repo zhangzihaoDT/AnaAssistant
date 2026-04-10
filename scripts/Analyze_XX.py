@@ -16,9 +16,9 @@ DATA_PATH_MD_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema
 SCRIPT_DIR = Path(__file__).parent
 DEFAULT_OUTPUT = SCRIPT_DIR / "reports/analyze_xx.html"
 TARGET_LEADS_METRIC = "下发线索转化率.下发线索数"
-TARGET_STORE_DAILY_LEADS_METRIC = "订单表.店日均下发线索数"
+TARGET_STORE_DAILY_LEADS_METRIC = "订单分析.店日均下发线索数"
 TARGET_30D_CONV_METRIC = "下发线索转化率.下发线索当30日锁单率"
-TARGET_LOCK_ORDERS_METRIC = "订单表.锁单数"
+TARGET_LOCK_ORDERS_METRIC = "订单分析.锁单数"
 STORE_SHARE_CANDIDATES = [
     "下发线索转化率.门店线索占比",
 ]
@@ -268,14 +268,14 @@ def load_lock_orders_layered_frame(metric_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_monthly_region_lock_share_frame(md_path: Path) -> pd.DataFrame:
-    order_path = resolve_dataset_path(label="订单表", md_path=md_path)
+    order_path = resolve_dataset_path(label="订单分析", md_path=md_path)
     cols = ["lock_time", "parent_region_name", "order_number"]
     try:
         order_df = pd.read_parquet(order_path, columns=cols)
     except Exception:
         order_df = pd.read_parquet(order_path)
     if "lock_time" not in order_df.columns or "order_number" not in order_df.columns:
-        raise ValueError("订单表缺少 lock_time 或 order_number 字段")
+        raise ValueError("订单分析缺少 lock_time 或 order_number 字段")
     working = order_df.copy()
     working["lock_time"] = pd.to_datetime(working["lock_time"], errors="coerce")
     end_exclusive = pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
@@ -527,7 +527,7 @@ def module_store_daily_leads_trend(data: pd.DataFrame) -> str:
     )
     fig.update_layout(
         common_layout(
-            title="订单表.店日均下发线索数趋势（2025-01-01 ~ Max Date）",
+            title="订单分析.店日均下发线索数趋势（2025-01-01 ~ Max Date）",
             xaxis_title="日期",
             yaxis_title="店日均下发线索数",
         )
@@ -978,7 +978,7 @@ def generate_report(
     """
     modules = [
         ("1. 下发线索数趋势", module_leads_trend, leads_data),
-        ("2. 订单表.店日均下发线索数趋势", module_store_daily_leads_trend, store_daily_leads_data),
+        ("2. 订单分析.店日均下发线索数趋势", module_store_daily_leads_trend, store_daily_leads_data),
         ("3. 店日均下发线索数与锁单数相关性", module_store_daily_vs_30d_conversion_correlation, store_daily_vs_30d_corr_data),
         ("4. 下发线索30日转化率趋势", module_30d_conversion_trend, conv30_data),
         ("5. 门店当日锁单率与门店30日锁单率相关性", module_store_rate_correlation, store_corr_data),

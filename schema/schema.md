@@ -33,7 +33,6 @@
 
 用于按时间段（日、周、月、年）进行趋势分析和筛选。
 
-- `order_create_time`: 订单创建时间
 - `order_create_date`: 订单创建日期
 - `store_create_date`: 门店创建日期
 - `lock_time`: 锁单时间
@@ -45,10 +44,11 @@
 - `deposit_refund_time`: 大定退款时间
 - `apply_refund_time`: 申请退款时间
 - `approve_refund_time`: 审批退款时间
+- `actual_refund_time`: 实际退款时间
 - `first_touch_time`: 首次接触时间
 - `first_test_drive_time`: 首次试驾时间
-- `lead_assign_time_max`: 线索最大下发时间
 - `first_assign_time`: 首次下发时间
+- `final_payment_time`: 尾款支付时间
 - `Assign Time 年/月/日`: 外部线索下发日期 (仅限 assign_data)
 
 ## 2. 可用指标 (Metrics)
@@ -65,15 +65,15 @@
 - **订单计数**: `order_number` 计数
 - **在营门店数**: 以目标日 `d` 统计，口径为“最近 30 天内有活动且在 `d` 当天已开店的门店数”。
   - 该指标由算子层统一计算：`operators/active_store.py`，优先走固定算子而不是通用 DSL 聚合。
-  - 活动日字段优先取 `order_create_date`，缺失时回退 `order_create_time`（按天截断）。
+  - 活动日字段优先取 `order_create_date`。
   - 仅保留 `store_name` 与活动日非空记录。
   - 每个门店开店日取 `store_create_date` 的最小值。
   - 活跃门店集合为活动日落在 `[d-29, d]` 的门店。
   - 在营判定为 `open_date <= d`，最终结果为门店 `store_name` 去重计数。
   - 不要把 `store_create_date` 直接当作统计时间字段做简单 count。
 
-- **年龄**: `age` (平均/分布)
-- **试驾次数**: `td_countd` (求和/平均)
+- **购车人年龄**: `buyer_age` (平均/分布)
+- **车主年龄**: `owner_age` (平均/分布)
 
 ### 外部线索指标 (仅限 assign_data)
 
@@ -95,8 +95,6 @@
 
 - `product_name`: 产品名称 (如: 全新智己L6)
 - `series`: 车型系列 (如: L6, LS6)
-- `belong_intent_series`: 意向系列
-- `drive_series_cn`: 驱动系列中文名
 - `product_type`: 燃料类型 / 动力形式。**注意：数据集中无此字段，需通过 product_name 模糊匹配生成。**
   - **增程**: `product_name` 包含 "52" 或 "66"。请使用正则匹配: `filters: [{"field": "product_name", "op": "matches", "value": "52|66"}]`。
   - **纯电**: `product_name` **不**包含 "52" 且 **不**包含 "66"。请使用正则匹配: `filters: [{"field": "product_name", "op": "not matches", "value": "52|66"}]`。
@@ -107,16 +105,14 @@
 - `store_city`: 门店城市
 - `store_name`: 门店名称
 - `parent_region_name`: 大区名称
-- `license_province`: 上牌省份
 - `license_city`: 上牌城市
-- `license_city_level`: 上牌城市等级
 
 ### 渠道与客户
 
-- `first_middle_channel_name`: 首次中间渠道名称
-- `gender`: 性别
-- `is_staff`: 是否员工 (Y/N)
-- `is_hold`: 是否保留 (Y/N)
+- `order_gender`: 购车人性别
+- `owner_gender`: 车主性别
+- `buyer_identity_no`: 购车人身份证号
+- `owner_identity_no`: 车主身份证号
 
 ### 其他
 
@@ -124,54 +120,51 @@
 - `finance_product`: 金融产品
 - `final_payment_way`: 尾款支付方式
 - `main_lead_id`: 关联试驾表的主线索 ID
+- `vin`: 车辆识别代码(VIN)
 
 ---
 
 ## 附录：原始字段 Schema 映射
 
-### order_full_data.parquet (Total Rows: 420697)
+### order_data.parquet (Total Rows: 445915)
 
-| Column Name               | Data Type      | Description           |
-| :------------------------ | :------------- | :-------------------- |
-| series                    | str            | 车型系列              |
-| final_payment_way         | category       | 尾款支付方式          |
-| intention_refund_time     | datetime64[ns] | 意向金退款时间        |
-| age                       | float64        | 年龄                  |
-| delivery_date             | datetime64[ns] | 交付日期              |
-| invoice_upload_time       | datetime64[ns] | 发票上传时间          |
-| finance_product           | str            | 金融产品              |
-| first_assign_time         | str            | 首次下发时间          |
-| first_test_drive_time     | datetime64[ns] | 首次试驾时间          |
-| first_middle_channel_name | str            | 首次中间渠道名称      |
-| lock_time                 | datetime64[ns] | 锁单时间              |
-| drive_series_cn           | category       | 驱动系列（中文）      |
-| license_city_level        | category       | 上牌城市等级          |
-| belong_intent_series      | str            | 意向系列              |
-| order_create_time         | datetime64[ns] | 订单创建时间          |
-| gender                    | category       | 性别                  |
-| owner_cell_phone          | string         | 车主手机号            |
-| approve_refund_time       | datetime64[ns] | 审批退款时间          |
-| product_name              | str            | 产品名称              |
-| invoice_amount            | float64        | 开票金额              |
-| store_city                | str            | 门店城市              |
-| store_create_date         | datetime64[ns] | 门店创建日期          |
-| store_name                | str            | 门店名称              |
-| order_create_date         | datetime64[ns] | 订单创建日期          |
-| order_number              | string         | 订单号                |
-| lead_assign_time_max      | str            | 线索最大下发时间      |
-| first_touch_time          | datetime64[ns] | 首次接触时间          |
-| order_type                | str            | 订单类型              |
-| deposit_refund_time       | datetime64[ns] | 大定退款时间          |
-| parent_region_name        | category       | 大区名称              |
-| td_countd                 | float64        | 试驾次数              |
-| main_lead_id              | str            | 关联试驾表的主线索 ID |
-| license_province          | str            | 上牌省份              |
-| apply_refund_time         | datetime64[ns] | 申请退款时间          |
-| license_city              | str            | 上牌城市              |
-| is_hold                   | category       | 是否保留              |
-| intention_payment_time    | datetime64[ns] | 意向金支付时间        |
-| is_staff                  | category       | 是否员工              |
-| deposit_payment_time      | datetime64[ns] | 大定支付时间          |
+| Column Name | Data Type | Description |
+| :--- | :--- | :--- |
+| order_number | string | 订单号 |
+| invoice_amount | float64 | 开票金额 |
+| main_lead_id | str | 关联试驾表的主线索 ID |
+| series | str | 车型系列 |
+| product_name | str | 产品名称 |
+| parent_region_name | str | 大区名称 |
+| store_name | str | 门店名称 |
+| store_create_date | datetime64[ns] | 门店创建日期 |
+| store_city | str | 门店城市 |
+| license_city | str | 上牌城市 |
+| first_assign_time | datetime64[ns] | 首次下发时间 |
+| first_touch_time | datetime64[ns] | 首次接触时间 |
+| order_type | str | 订单类型 |
+| buyer_identity_no | str | 购车人身份证号 |
+| owner_identity_no | str | 车主身份证号 |
+| final_payment_way | category | 尾款支付方式 |
+| delivery_date | datetime64[ns] | 交付日期 |
+| invoice_upload_time | datetime64[ns] | 发票上传时间 |
+| first_test_drive_time | datetime64[ns] | 首次试驾时间 |
+| final_payment_time | datetime64[ns] | 尾款支付时间 |
+| finance_product | str | 金融产品 |
+| approve_refund_time | datetime64[ns] | 审批退款时间 |
+| apply_refund_time | datetime64[ns] | 申请退款时间 |
+| actual_refund_time | datetime64[ns] | 实际退款时间 |
+| order_create_date | datetime64[ns] | 订单创建日期 |
+| vin | str | 车辆识别代码(VIN) |
+| buyer_age | float64 | 购车人年龄 |
+| owner_age | float64 | 车主年龄 |
+| order_gender | str | 购车人性别 |
+| owner_gender | str | 车主性别 |
+| intention_payment_time | datetime64[ns] | 意向金支付时间 |
+| intention_refund_time | datetime64[ns] | 意向金退款时间 |
+| deposit_refund_time | datetime64[ns] | 大定退款时间 |
+| deposit_payment_time | datetime64[ns] | 大定支付时间 |
+| lock_time | datetime64[ns] | 锁单时间 |
 
 ### assign_data.csv (Total Rows: 1184)
 

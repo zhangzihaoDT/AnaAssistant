@@ -18,9 +18,9 @@ def run_registered_operator(plan: dict, user_query: str, query_tool) -> dict | N
     if not _is_active_store_plan(plan, user_query):
         return None
     query_tool._load_datasets()
-    df = query_tool.datasets.get("order_full_data")
+    df = query_tool.datasets.get("order_data")
     if df is None:
-        return {"type": "active_store", "error": "dataset_not_found", "message": "缺少 order_full_data 数据集"}
+        return {"type": "active_store", "error": "dataset_not_found", "message": "缺少 order_data 数据集"}
     time = (plan or {}).get("time", {}) or {}
     start = time.get("start")
     end = time.get("end")

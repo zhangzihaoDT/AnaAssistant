@@ -2,6 +2,16 @@
 
 此项目演示了如何使用 DeepSeek API（OpenAI 兼容接口）进行工具调用（Function Calling），并实现一个可落地的 **Agentic BI 查询系统**。
 
+## 项目现状梳理
+
+当前项目是一个基于 DeepSeek API 的 Agentic BI 查询系统，整体架构包含以下几个主要部分：
+
+- Agent 核心 (agent/)：负责自然语言规划、工具路由和状态管理的智能分析循环。
+- 工具库 (tools/)：提供对比 (comparison_tool.py)、查询 (query_tool.py)、统计 (statistics_tool.py) 等具体的执行算子。
+- 业务处理 (operators/)：处理具有强业务口径的特殊查询算子。
+- 独立分析脚本 (scripts/)：包含各种业务分析、回测和预测的脚本（如 index_summary.py，预测滚动回测等）。
+- 对外接入：通过 feishu_bot.py 接入飞书提供交互，入口由 main.py 负责代理。
+
 ## 系统定位
 
 - 通过 **NL → Planning DSL → Execution → Analysis** 的分层流程处理业务问题
@@ -11,13 +21,7 @@
 
 ## 核心能力
 
-### 1) 基础工具调用（`demo.py`）
-
-- **智能判断**：根据用户问题动态决定是否调用工具。
-- **时间查询**：调用 `get_current_time` 获取实时时间。
-- **代码执行**：调用 `CodeInterpreter` 在沙箱中执行 Python 代码。
-
-### 2) Agentic BI 数据查询（`agent/agent_loop.py`）
+### Agentic BI 数据查询（`agent/agent_loop.py`）
 
 这是一个基于 **NL → Planning DSL → Execution DSL → Execution** 架构的智能数据分析 Agent。
 
@@ -218,18 +222,6 @@ pip install -r requirements.txt
 
 ## 运行方式
 
-### 运行基础演示
-
-```bash
-python3 demo.py
-```
-
-### 运行飞书消息接收测试
-
-```bash
-python3 feishu_test.py
-```
-
 ### 运行飞书 Agent Bot
 
 ```bash
@@ -277,7 +269,6 @@ print(answer)
 
 ## 项目结构
 
-- `demo.py`: 基础工具调用演示入口。
 - `agent/`: Agent 运行时目录
   - `agent_loop.py`: 核心循环入口（状态驱动、多步执行、最终回答）。
   - `planner.py`: 规划与 Loop 决策模块（PlanningAgent + 运行时 action 决策）。

@@ -264,7 +264,7 @@ def _calc_order_lock_people_non_test_drive_for_range(
     series_group: str | None,
     series_group_logic: dict[str, str] | None,
 ) -> int | None:
-    cols = ["lock_time", "owner_cell_phone", "order_type"]
+    cols = ["lock_time", "owner_identity_no", "buyer_identity_no", "order_type"]
     if series_group is not None:
         cols.append("product_name")
     try:
@@ -272,18 +272,24 @@ def _calc_order_lock_people_non_test_drive_for_range(
     except Exception:
         return None
 
-    if "lock_time" not in df.columns or "owner_cell_phone" not in df.columns:
+    person_col = None
+    for cand in ["owner_identity_no", "buyer_identity_no", "owner_cell_phone"]:
+        if cand in df.columns:
+            person_col = cand
+            break
+
+    if "lock_time" not in df.columns or person_col is None:
         return None
     if series_group is not None and "product_name" not in df.columns:
-        raise ValueError("订单表缺少 product_name，无法按车系分组计算数据完整度分母")
+        raise ValueError("订单分析缺少 product_name，无法按车系分组计算数据完整度分母")
 
     df = df.copy()
     df["lock_time"] = pd.to_datetime(df["lock_time"], errors="coerce")
     lock_mask = df["lock_time"].notna() & (df["lock_time"] >= start) & (df["lock_time"] < end_exclusive)
     if "order_type" in df.columns:
-        lock_mask = lock_mask & df["owner_cell_phone"].notna() & (df["order_type"] != "试驾车")
+        lock_mask = lock_mask & df[person_col].notna() & (df["order_type"] != "试驾车")
     else:
-        lock_mask = lock_mask & df["owner_cell_phone"].notna()
+        lock_mask = lock_mask & df[person_col].notna()
 
     df_lock = df.loc[lock_mask].copy()
     if series_group is not None:
@@ -310,7 +316,7 @@ def _calc_order_lock_people_non_test_drive_for_range(
             series_mask = _eval_logic_ast(ast, pn)
         df_lock = df_lock.loc[series_mask].copy()
 
-    return int(df_lock["owner_cell_phone"].nunique())
+    return int(df_lock[person_col].nunique())
 
 
 def _calc_main_code_whitelist_from_order_analysis_for_range(
@@ -593,7 +599,7 @@ def main() -> None:
     if attribution_path is None:
         raise ValueError(f"在 {args.data_path_md} 中找不到 锁单归因 的数据路径")
 
-    order_table_path = data_paths.get("订单表")
+    order_table_path = data_paths.get("订单分析")
     order_analysis_path = data_paths.get("订单分析")
     main_code_whitelist = None
     series_group_logic = None
@@ -601,7 +607,7 @@ def main() -> None:
         if order_analysis_path is None:
             raise ValueError("指定 --series-group 时，data_path.md 中必须提供 订单分析 路径")
         if order_table_path is None:
-            raise ValueError("指定 --series-group 时，data_path.md 中必须提供 订单表 路径（用于计算数据完整度分母）")
+            raise ValueError("指定 --series-group 时，data_path.md 中必须提供 订单分析 路径（用于计算数据完整度分母）")
         series_group_logic = _load_series_group_logic(Path(args.business_definition_json))
         if not series_group_logic:
             raise ValueError("business_definition.json 中缺少 series_group_logic")

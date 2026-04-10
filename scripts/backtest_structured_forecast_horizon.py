@@ -7,7 +7,7 @@ import csv
 import datetime
 from pathlib import Path
 
-LOCK_ORDERS_METRIC = "订单表.锁单数"
+LOCK_ORDERS_METRIC = "订单分析.锁单数"
 LEADS_METRIC = "下发线索转化率.下发线索数"
 LOCK_RATE_CANDIDATES = [
     "下发线索转化率.下发线索当30日锁单率",

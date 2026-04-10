@@ -135,6 +135,10 @@ def _pick_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+def _pick_person_id_column(df: pd.DataFrame) -> str | None:
+    return _pick_column(df, ["owner_identity_no", "buyer_identity_no"])
+
+
 def _resolve_journey_columns(df: pd.DataFrame) -> dict[str, str | None]:
     return {
         "user_phone_md5": _pick_column(df, ["lc_user_phone_md5", "ic_user_phone_md5", "user_phone_md5", "phone_md5"]),
@@ -208,15 +212,15 @@ def _calc_order_metrics(
         "invoice_upload_time",
         "approve_refund_time",
         "order_type",
-        "invoice_amount",
-        "owner_cell_phone",
+        "owner_identity_no",
+        "buyer_identity_no",
         "series",
         "product_name",
         "store_name",
         "store_city",
         "store_create_date",
-        "order_create_time",
         "order_create_date",
+        "invoice_amount",
     ]
     df = pd.read_parquet(order_path, columns=cols)
 
@@ -237,17 +241,17 @@ def _calc_order_metrics(
         locked.loc[locked["approve_refund_time"].isna(), "order_number"].nunique()
     )
 
+    person_col = _pick_person_id_column(df)
     lock_people_count = int(
-        df.loc[
-            lock_mask & df["owner_cell_phone"].notna(),
-            "owner_cell_phone",
-        ].nunique()
+        df.loc[lock_mask & df[person_col].notna(), person_col].nunique() if person_col else 0
     )
     lock_people_count_non_test_drive = int(
         df.loc[
-            lock_mask & df["owner_cell_phone"].notna() & (df["order_type"] != "试驾车"),
-            "owner_cell_phone",
+            lock_mask & df[person_col].notna() & (df["order_type"] != "试驾车"),
+            person_col,
         ].nunique()
+        if person_col
+        else 0
     )
 
     active_store_count = _calc_active_store_count(
@@ -255,7 +259,6 @@ def _calc_order_metrics(
             [
                 "store_name",
                 "store_create_date",
-                "order_create_time",
                 "order_create_date",
             ]
         ],
@@ -290,15 +293,16 @@ def _calc_order_metrics(
             top5 = float(city_counts.nlargest(5).sum())
             cr5_city = top5 / total
 
-    inv_win = df.loc[invoice_mask & df["lock_time"].notna(), ["order_type", "invoice_amount"]].copy()
     atp_wan = None
-    if not inv_win.empty and "order_type" in inv_win.columns and "invoice_amount" in inv_win.columns:
-        user_orders = inv_win[inv_win["order_type"] == "用户车"].copy()
-        if not user_orders.empty:
-            amt = pd.to_numeric(user_orders["invoice_amount"], errors="coerce")
-            amt = amt[amt > 0]
-            if not amt.empty:
-                atp_wan = float(amt.mean() / 10000.0)
+    if "invoice_amount" in df.columns:
+        inv_win = df.loc[invoice_mask & df["lock_time"].notna(), ["order_type", "invoice_amount"]].copy()
+        if not inv_win.empty and "order_type" in inv_win.columns and "invoice_amount" in inv_win.columns:
+            user_orders = inv_win[inv_win["order_type"] == "用户车"].copy()
+            if not user_orders.empty:
+                amt = pd.to_numeric(user_orders["invoice_amount"], errors="coerce")
+                amt = amt[amt > 0]
+                if not amt.empty:
+                    atp_wan = float(amt.mean() / 10000.0)
 
     product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), ["order_number", "series", "product_name"]].copy()
     if not product_win.empty:
@@ -658,14 +662,13 @@ def _load_order_df(order_path: Path) -> pd.DataFrame:
         "invoice_upload_time",
         "approve_refund_time",
         "order_type",
-        "invoice_amount",
-        "owner_cell_phone",
+        "owner_identity_no",
+        "buyer_identity_no",
         "series",
         "product_name",
         "store_name",
         "store_city",
         "store_create_date",
-        "order_create_time",
         "order_create_date",
     ]
     return pd.read_parquet(order_path, columns=cols)
@@ -691,17 +694,17 @@ def _calc_order_metrics_from_df(
         locked.loc[locked["approve_refund_time"].isna(), "order_number"].nunique()
     )
 
+    person_col = _pick_person_id_column(df)
     lock_people_count = int(
-        df.loc[
-            lock_mask & df["owner_cell_phone"].notna(),
-            "owner_cell_phone",
-        ].nunique()
+        df.loc[lock_mask & df[person_col].notna(), person_col].nunique() if person_col else 0
     )
     lock_people_count_non_test_drive = int(
         df.loc[
-            lock_mask & df["owner_cell_phone"].notna() & (df["order_type"] != "试驾车"),
-            "owner_cell_phone",
+            lock_mask & df[person_col].notna() & (df["order_type"] != "试驾车"),
+            person_col,
         ].nunique()
+        if person_col
+        else 0
     )
 
     active_store_count = _calc_active_store_count(
@@ -709,7 +712,6 @@ def _calc_order_metrics_from_df(
             [
                 "store_name",
                 "store_create_date",
-                "order_create_time",
                 "order_create_date",
             ]
         ],
@@ -744,15 +746,16 @@ def _calc_order_metrics_from_df(
             top5 = float(city_counts.nlargest(5).sum())
             cr5_city = top5 / total
 
-    inv_win = df.loc[invoice_mask & df["lock_time"].notna(), ["order_type", "invoice_amount"]].copy()
     atp_wan = None
-    if not inv_win.empty and "order_type" in inv_win.columns and "invoice_amount" in inv_win.columns:
-        user_orders = inv_win[inv_win["order_type"] == "用户车"].copy()
-        if not user_orders.empty:
-            amt = pd.to_numeric(user_orders["invoice_amount"], errors="coerce")
-            amt = amt[amt > 0]
-            if not amt.empty:
-                atp_wan = float(amt.mean() / 10000.0)
+    if "invoice_amount" in df.columns:
+        inv_win = df.loc[invoice_mask & df["lock_time"].notna(), ["order_type", "invoice_amount"]].copy()
+        if not inv_win.empty and "order_type" in inv_win.columns and "invoice_amount" in inv_win.columns:
+            user_orders = inv_win[inv_win["order_type"] == "用户车"].copy()
+            if not user_orders.empty:
+                amt = pd.to_numeric(user_orders["invoice_amount"], errors="coerce")
+                amt = amt[amt > 0]
+                if not amt.empty:
+                    atp_wan = float(amt.mean() / 10000.0)
 
     product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), ["order_number", "series", "product_name"]].copy()
     if not product_win.empty:
@@ -1119,7 +1122,7 @@ def _calc_attribution_metrics_from_df(
 
 
 def _build_daily_metrics_matrix(days: list[dict[str, object]]) -> dict[str, object]:
-    section_order = ["订单表", "归因分析", "下发线索转化率", "试驾分析"]
+    section_order = ["订单分析", "归因分析", "下发线索转化率", "试驾分析"]
     columns = [str(d.get("date")) for d in days if isinstance(d, dict)]
     matrix_values: dict[str, dict[str, object]] = {}
     metric_order: list[str] = []
@@ -1297,7 +1300,7 @@ def main() -> None:
 
     data_paths = _read_data_paths(Path(args.data_path_md))
 
-    order_path = data_paths["订单表"]
+    order_path = data_paths["订单分析"]
     attribution_path = data_paths.get("锁单归因")
     assign_path = data_paths["下发线索转化率"]
     test_drive_path = data_paths["试驾分析"]
@@ -1335,7 +1338,7 @@ def main() -> None:
 
         result = {
             "date": str(target_date.date()),
-            "订单表": order_metrics,
+            "订单分析": order_metrics,
             "归因分析": attribution_metrics,
             "下发线索转化率": assign_metrics,
             "试驾分析": _calc_test_drive_metrics(test_drive_path, target_date),
@@ -1392,7 +1395,7 @@ def main() -> None:
         day_results.append(
             {
                 "date": str(d.date()),
-                "订单表": order_metrics,
+                "订单分析": order_metrics,
                 "归因分析": attribution_metrics,
                 "下发线索转化率": assign_metrics,
                 "试驾分析": _calc_test_drive_metrics_from_df(test_drive_df, d),

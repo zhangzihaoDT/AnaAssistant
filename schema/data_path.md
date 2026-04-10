@@ -1,4 +1,3 @@
-订单表：/Users/zihao\_/Documents/coding/dataset/formatted/order_full_data.parquet
 订单分析：/Users/zihao\_/Documents/coding/dataset/formatted/order_data.parquet
 下发线索转化率：/Users/zihao\_/Documents/coding/dataset/original/assign_data.csv
 试驾分析：/Users/zihao\_/Documents/coding/dataset/original/test_drive_data.csv
