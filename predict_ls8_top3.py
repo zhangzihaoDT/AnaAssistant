@@ -49,25 +49,16 @@ historical_data = {
     "LS9": {"presale_top3_retained": 4376, "listing_top3_locks": 2133, "locks_from_presale_top3": 1035},
 }
 
-# Derived metrics for "Listing Top 3 Days Locks"
-# 预售前3日小订 在上市前3日 的转化率
-conv_rates = [v['locks_from_presale_top3'] / v['presale_top3_retained'] for v in historical_data.values()]
-# 上市前3日锁单中 来自预售前3日 的占比
-pcts = [v['locks_from_presale_top3'] / v['listing_top3_locks'] for v in historical_data.values()]
-
-scenarios = {
-    "保守预估 (高占比/低转化)": {"conv": min(conv_rates), "pct": max(pcts)},
-    "均值预估 (历史平均)": {"conv": np.mean(conv_rates), "pct": np.mean(pcts)},
-    "乐观预估 (低占比/高转化)": {"conv": max(conv_rates), "pct": min(pcts)},
-}
-
 print(f"\n【已知事实】LS8 预售前3日留存小订数: {ls8_top3_orders}")
-print("\n--- 预测 LS8 上市后【前3日】锁单数 ---")
-for name, params in scenarios.items():
-    pred_locks = (ls8_top3_orders * params['conv']) / params['pct']
-    print(f"[{name}]")
-    print(f"  假定 预售前3日小订 在 上市前3日的转化率: {params['conv']*100:.1f}%")
-    print(f"  假定 上市前3日锁单中 预售前3日小订占比: {params['pct']*100:.1f}%")
+print("\n--- 预测 LS8 上市后【前3日】锁单数 (基于各历史车型实际表现) ---")
+for model_name, stats in historical_data.items():
+    conv = stats['locks_from_presale_top3'] / stats['presale_top3_retained']
+    pct = stats['locks_from_presale_top3'] / stats['listing_top3_locks']
+    pred_locks = (ls8_top3_orders * conv) / pct
+    
+    print(f"[对标 {model_name}]")
+    print(f"  假定 预售前3日小订 在 上市前3日的转化率: {conv*100:.1f}%")
+    print(f"  假定 上市前3日锁单中 预售前3日小订占比: {pct*100:.1f}%")
     print(f"  预测 LS8 上市后前3日总锁单: {int(pred_locks)}")
 
 X = np.array([v['presale_top3_retained'] for v in historical_data.values()])

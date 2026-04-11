@@ -49,24 +49,18 @@ historical_data = {
     "LS9": {"top3_retained": 4376, "total_retained": 8849, "total_locks": 3319},
 }
 
-top3_pcts = [v['top3_retained'] / v['total_retained'] for v in historical_data.values()]
-conv_rates_30d = [v['total_locks'] / v['total_retained'] for v in historical_data.values()]
-
-scenarios = {
-    "保守预估 (高占比/低转化)": {"top3_pct": max(top3_pcts), "conv_30d": min(conv_rates_30d)},
-    "均值预估 (历史平均)": {"top3_pct": np.mean(top3_pcts), "conv_30d": np.mean(conv_rates_30d)},
-    "乐观预估 (低占比/高转化)": {"top3_pct": min(top3_pcts), "conv_30d": max(conv_rates_30d)},
-}
-
 print(f"\n【已知事实】LS8 前3日留存小订数: {ls8_top3_orders}")
-print("\n--- 基于【前3日小订占比】及【30日总转化率】的推演模型 ---")
-for name, params in scenarios.items():
-    pred_total_retained = ls8_top3_orders / params['top3_pct']
-    pred_locks = pred_total_retained * params['conv_30d']
-    print(f"[{name}]")
-    print(f"  假定 前3日小订占总小订比: {params['top3_pct']*100:.1f}%")
+print("\n--- 基于各历史车型实际转化表现的推演模型 ---")
+for model_name, stats in historical_data.items():
+    top3_pct = stats['top3_retained'] / stats['total_retained']
+    conv_30d = stats['total_locks'] / stats['total_retained']
+    pred_total_retained = ls8_top3_orders / top3_pct
+    pred_locks = pred_total_retained * conv_30d
+    
+    print(f"[对标 {model_name}]")
+    print(f"  假定 前3日小订占总小订比: {top3_pct*100:.1f}%")
     print(f"  推演 LS8 总留存小订数: {int(pred_total_retained)}")
-    print(f"  假定 30日总转化率: {params['conv_30d']*100:.1f}%")
+    print(f"  假定 30日总转化率: {conv_30d*100:.1f}%")
     print(f"  预测 LS8 30日总锁单: {int(pred_locks)}")
 
 X = np.array([v['top3_retained'] for v in historical_data.values()])
