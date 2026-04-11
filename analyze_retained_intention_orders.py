@@ -48,7 +48,7 @@ def main():
     df['model'] = df['product_name'].apply(get_model)
 
     # 4. 计算指定车型的预售期留存小订数
-    target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9", "LS8"]
+    target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9"]
     results = []
     distribution_results = []
     intention_dist_results = []
