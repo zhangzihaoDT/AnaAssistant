@@ -50,6 +50,7 @@ def main():
     # 4. 计算指定车型的预售期留存小订数
     target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9", "LS8"]
     results = []
+    distribution_results = []
 
     for model in target_models:
         if model not in time_periods:
@@ -93,11 +94,22 @@ def main():
                     (df_model['lock_time'] >= listing_day) & \
                     (df_model['lock_time'] < lock_30d_end_excl)
                     
-        locked_orders_30d = df_model.loc[mask_lock, 'order_number'].dropna().drop_duplicates()
+        locked_orders_30d = df_model.loc[mask_lock, ['order_number', 'lock_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
         
         # 留存小订中发生了上市后30日锁单的数量
-        locked_retained_orders = locked_orders_30d[locked_orders_30d.isin(retained_orders)]
-        locked_count = int(locked_retained_orders.nunique())
+        locked_retained_df = locked_orders_30d[locked_orders_30d['order_number'].isin(retained_orders)].copy()
+        locked_count = int(locked_retained_df['order_number'].nunique())
+        
+        if locked_count > 0:
+            locked_retained_df['days_since_listing'] = (locked_retained_df['lock_time'] - listing_day).dt.days
+            daily_counts = locked_retained_df.groupby('days_since_listing')['order_number'].nunique()
+            for day_idx, count in daily_counts.items():
+                distribution_results.append({
+                    "车型": model,
+                    "上市后第N天": int(day_idx) + 1,  # 第1天即为上市当天
+                    "锁单数": int(count),
+                    "占30日锁单比例": float(count) / locked_count
+                })
         
         conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
         
@@ -114,6 +126,23 @@ def main():
     results_df = pd.DataFrame(results)
     print("\n--- 各车型预售周期留存小订数计算结果 ---")
     print(results_df.to_string(index=False))
+
+    if distribution_results:
+        dist_df = pd.DataFrame(distribution_results)
+        
+        # 补全1-30天的数据以防有的天数为0
+        all_days = list(range(1, 32))
+        pivot_count = dist_df.pivot_table(index="上市后第N天", columns="车型", values="锁单数", fill_value=0).reindex(all_days, fill_value=0)
+        pivot_pct = dist_df.pivot_table(index="上市后第N天", columns="车型", values="占30日锁单比例", fill_value=0).reindex(all_days, fill_value=0)
+        
+        # 格式化百分比
+        pivot_pct_str = pivot_pct.map(lambda x: f"{x*100:.1f}%")
+        
+        print("\n--- 各车型上市后30日内每日锁单数分布 ---")
+        print(pivot_count.to_string())
+        
+        print("\n--- 各车型上市后30日内每日锁单占比分布 ---")
+        print(pivot_pct_str.to_string())
 
 if __name__ == "__main__":
     main()

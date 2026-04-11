@@ -74,33 +74,18 @@
    - **上市后30日锁单数 (`locked_count`)**：同时满足预售期留存且在锁单时间窗口内锁单的唯一订单总数。
    - **转化率 (`conversion_rate`)**：`上市后30日锁单数 / 预售期留存小订总数 * 100%`。
 
-### 2.4 参考代码实现 (Python/Pandas)
-```python
-# 确定上市日
-listing_day = end_day
-if model == "CM0":
-    listing_day = listing_day + pd.Timedelta(days=1)
-    
-# 确定最终截断日边界
-finish_str = time_periods[model].get('finish')
-finish_day = pd.to_datetime(finish_str) if finish_str else listing_day
-finish_excl = finish_day + pd.Timedelta(days=1)
+## 3. 上市后30日锁单数的日分布规律 (Daily Distribution of 30-Day Lock Orders)
 
-# 计算30日锁单的时间排他性边界
-lock_30d_end_excl = min(listing_day + pd.Timedelta(days=31), finish_excl)
+### 3.1 业务定义
+对于上述统计出的“上市后30日锁单”订单，按其锁单发生的日期距离上市日的天数进行分组，得出每一天的锁单数量和占比（占 30 天总锁单数的比例），用以观察不同车型的锁单节奏和转化高峰期。
 
-# 锁单时间范围掩码
-mask_lock = (df_model['lock_time'].notna()) & \
-            (df_model['lock_time'] >= listing_day) & \
-            (df_model['lock_time'] < lock_30d_end_excl)
-            
-# 提取在窗口期内锁单的订单并去重
-locked_orders_30d = df_model.loc[mask_lock, 'order_number'].dropna().drop_duplicates()
-
-# 取交集：留存小订中发生了上市后30日锁单的订单
-locked_retained_orders = locked_orders_30d[locked_orders_30d.isin(retained_orders)]
-locked_count = int(locked_retained_orders.nunique())
-
-# 计算转化率
-conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
-```
+### 3.2 核心计算口径
+1. 提取发生了锁单行为的留存订单集 `locked_retained_df`，并获取对应的 `lock_time`。
+2. 计算天数差：
+   ```python
+   days_since_listing = (lock_time - listing_day).dt.days
+   # +1 转为常规业务语义上的 "第1天"（即上市当天）
+   day_idx = days_since_listing + 1
+   ```
+3. 以 `day_idx` (1到31天) 为维度聚合统计订单数 (`count`)。
+4. 占比计算公式：`当日锁单数 / 30日锁单总数 * 100%`。
