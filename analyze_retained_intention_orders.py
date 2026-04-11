@@ -51,6 +51,7 @@ def main():
     target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9", "LS8"]
     results = []
     distribution_results = []
+    presale_dist_results = []
 
     for model in target_models:
         if model not in time_periods:
@@ -110,6 +111,21 @@ def main():
                     "锁单数": int(count),
                     "占30日锁单比例": float(count) / locked_count
                 })
+                
+            # 5. 分析这些锁单的订单是在预售期哪一天支付小订的
+            # 先拿到这批发生了锁单的订单的小订支付时间
+            locked_orders_with_intent = df_model[df_model['order_number'].isin(locked_retained_df['order_number'])].copy()
+            locked_orders_with_intent['days_since_presale_start'] = (locked_orders_with_intent['intention_payment_time'] - start_day).dt.days
+            
+            # 分布统计
+            presale_daily_counts = locked_orders_with_intent.groupby('days_since_presale_start')['order_number'].nunique()
+            for day_idx, count in presale_daily_counts.items():
+                presale_dist_results.append({
+                    "车型": model,
+                    "预售期第N天": int(day_idx) + 1,  # 第1天即为预售开始当天
+                    "来源锁单数": int(count),
+                    "占总锁单比例": float(count) / locked_count
+                })
         
         conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
         
@@ -166,6 +182,52 @@ def main():
         
         print("\n--- 各车型上市后核心周期（前1-3天及前7日）锁单分布与转化 ---")
         print(summary_df.to_string(index=False))
+
+    if presale_dist_results:
+        p_dist_df = pd.DataFrame(presale_dist_results)
+        
+        # 为了展示美观，可以限制前 14 天或者展示全部
+        max_days = int(p_dist_df["预售期第N天"].max())
+        all_presale_days = list(range(1, max_days + 1))
+        
+        p_pivot_count = p_dist_df.pivot_table(index="预售期第N天", columns="车型", values="来源锁单数", fill_value=0).reindex(all_presale_days, fill_value=0)
+        p_pivot_pct = p_dist_df.pivot_table(index="预售期第N天", columns="车型", values="占总锁单比例", fill_value=0).reindex(all_presale_days, fill_value=0)
+        
+        # 同样，也可以像上市分布一样做一个核心周期的汇总 (比如盲订首日/前3日/最后3天，这里先简单展示前7天的占比和总占比)
+        # 这里提取 Day1~Day7 的分布
+        p_summary_rows = []
+        for model in p_pivot_count.columns:
+            counts = p_pivot_count[model]
+            pcts = p_pivot_pct[model]
+            
+            d1_cnt, d1_pct = counts[1], pcts[1]
+            top3_cnt = counts.loc[1:3].sum()
+            top3_pct = pcts.loc[1:3].sum()
+            top7_cnt = counts.loc[1:7].sum()
+            top7_pct = pcts.loc[1:7].sum()
+            
+            # 后半程(上市前冲刺，也就是预售期最后3天)
+            # 先找到该车型预售期最后一天是多少
+            model_max_day = p_dist_df[p_dist_df["车型"] == model]["预售期第N天"].max()
+            if pd.isna(model_max_day):
+                last3_cnt, last3_pct = 0, 0.0
+            else:
+                last_start = max(1, int(model_max_day) - 2)
+                last3_cnt = counts.loc[last_start:int(model_max_day)].sum()
+                last3_pct = pcts.loc[last_start:int(model_max_day)].sum()
+                
+            p_summary_rows.append({
+                "车型": model,
+                "首日(Day1)_来源锁单": int(d1_cnt), "首日_占比": f"{d1_pct*100:.1f}%",
+                "前3日累计_来源锁单": int(top3_cnt), "前3日累计_占比": f"{top3_pct*100:.1f}%",
+                "前7日累计_来源锁单": int(top7_cnt), "前7日累计_占比": f"{top7_pct*100:.1f}%",
+                "预售末3日冲刺_来源锁单": int(last3_cnt), "预售末3日冲刺_占比": f"{last3_pct*100:.1f}%"
+            })
+            
+        p_summary_df = pd.DataFrame(p_summary_rows)
+        
+        print("\n--- 各车型最终转化为上市后30日锁单的订单 在预售期的来源分布 ---")
+        print(p_summary_df.to_string(index=False))
 
 if __name__ == "__main__":
     main()

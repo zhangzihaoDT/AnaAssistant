@@ -89,3 +89,21 @@
    ```
 3. 以 `day_idx` (1到31天) 为维度聚合统计订单数 (`count`)。
 4. 占比计算公式：`当日锁单数 / 30日锁单总数 * 100%`。
+
+## 4. 上市后锁单订单的预售期来源分布 (Presale Source Distribution of Locked Orders)
+
+### 4.1 业务定义
+对于上述统计出的最终转化为“上市后30日锁单”的那部分订单，分析它们是在预售周期的**哪一天**支付的小订。旨在观察最终带来大定转化的优质线索是集中在“盲订开启首日”还是“上市前的最后冲刺期”。
+
+### 4.2 核心计算口径
+1. 从已锁单的留存小订集合 `locked_retained_df` 出发，追溯其原始的 `intention_payment_time`。
+2. 计算小订支付日距离预售开始日的天数差：
+   ```python
+   days_since_presale_start = (intention_payment_time - start_day).dt.days
+   # +1 转为常规业务语义上的 "预售第1天"（即盲订开启当天）
+   presale_day_idx = days_since_presale_start + 1
+   ```
+3. 以 `presale_day_idx` 为维度聚合订单去重数，并计算各来源日占总锁单量的比例。
+4. 业务汇总关键观察点：
+   - **盲订首日/前3日**：忠诚粉丝、盲订发布会转化。
+   - **预售期最后3天**：上市前的集中造势和逼单催化。
