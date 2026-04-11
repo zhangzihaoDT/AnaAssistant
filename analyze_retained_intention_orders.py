@@ -52,6 +52,7 @@ def main():
     results = []
     distribution_results = []
     intention_dist_results = []
+    intention_group_conversion_results = []
 
     for model in target_models:
         if model not in time_periods:
@@ -101,6 +102,25 @@ def main():
         locked_retained_df = locked_orders_30d[locked_orders_30d['order_number'].isin(retained_orders)].copy()
         locked_count = int(locked_retained_df['order_number'].nunique())
         
+        # === 新增/扩展：计算预售周期各阶段的【留存小订总数】和【对应的锁单转化率】 ===
+        # 将留存小订 (retained_orders) 结合意向支付时间提取出来
+        retained_intention_df = df_model.loc[mask_time & mask_retained, ['order_number', 'intention_payment_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
+        
+        retained_intention_df['intention_days_from_start'] = (retained_intention_df['intention_payment_time'].dt.normalize() - start_day.normalize()).dt.days
+        retained_intention_df['intention_days_to_end'] = (end_day.normalize() - retained_intention_df['intention_payment_time'].dt.normalize()).dt.days
+        
+        # 各阶段留存小订基数
+        base_day1_cnt = (retained_intention_df['intention_days_from_start'] == 0).sum()
+        base_day2_cnt = (retained_intention_df['intention_days_from_start'] == 1).sum()
+        base_day3_cnt = (retained_intention_df['intention_days_from_start'] == 2).sum()
+        base_top3_cnt = base_day1_cnt + base_day2_cnt + base_day3_cnt
+        
+        base_last_day3_cnt = (retained_intention_df['intention_days_to_end'] == 2).sum()
+        base_last_day2_cnt = (retained_intention_df['intention_days_to_end'] == 1).sum()
+        base_last_day1_cnt = (retained_intention_df['intention_days_to_end'] == 0).sum()
+        
+        base_middle_cnt = retained_count - base_top3_cnt - base_last_day1_cnt - base_last_day2_cnt - base_last_day3_cnt
+        
         if locked_count > 0:
             locked_retained_df['days_since_listing'] = (locked_retained_df['lock_time'] - listing_day).dt.days
             daily_counts = locked_retained_df.groupby('days_since_listing')['order_number'].nunique()
@@ -112,14 +132,8 @@ def main():
                     "占30日锁单比例": float(count) / locked_count
                 })
                 
-            # === 新增：分析这些锁单订单的“小订时间”在预售周期的分布 ===
-            # 将 intention_payment_time 关联回来
-            tmp_intention = df_model[['order_number', 'intention_payment_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
-            locked_retained_df = locked_retained_df.merge(tmp_intention, on='order_number', how='left')
-            
-            # 计算距离预售开始的天数，以及距离预售结束的天数
-            locked_retained_df['intention_days_from_start'] = (locked_retained_df['intention_payment_time'].dt.normalize() - start_day.normalize()).dt.days
-            locked_retained_df['intention_days_to_end'] = (end_day.normalize() - locked_retained_df['intention_payment_time'].dt.normalize()).dt.days
+            # 将 intention_payment_time 关联回锁单的集合
+            locked_retained_df = locked_retained_df.merge(retained_intention_df[['order_number', 'intention_days_from_start', 'intention_days_to_end']], on='order_number', how='left')
             
             day1_cnt = (locked_retained_df['intention_days_from_start'] == 0).sum()
             day2_cnt = (locked_retained_df['intention_days_from_start'] == 1).sum()
@@ -139,13 +153,34 @@ def main():
                 "车型": model,
                 "总锁单": locked_count,
                 "Day1": int(day1_cnt), "Day1占比": pct(day1_cnt),
-                "Day2": int(day2_cnt), "Day2占比": pct(day2_cnt),
-                "Day3": int(day3_cnt), "Day3占比": pct(day3_cnt),
                 "前3日累计": int(top3_cnt), "前3日占比": pct(top3_cnt),
                 "中间期": int(middle_cnt), "中间占比": pct(middle_cnt),
-                "倒数Day3": int(last_day3_cnt), "倒数Day3占比": pct(last_day3_cnt),
                 "倒数Day2": int(last_day2_cnt), "倒数Day2占比": pct(last_day2_cnt),
                 "倒数Day1(上市)": int(last_day1_cnt), "倒数Day1占比": pct(last_day1_cnt)
+            })
+            
+            def conv_pct(lock_c, base_c):
+                return f"{lock_c/base_c*100:.1f}%" if base_c > 0 else "0.0%"
+            
+            intention_group_conversion_results.append({
+                "车型": model,
+                "总体留存小订": retained_count, "总转化率": f"{(locked_count/retained_count*100):.1f}%" if retained_count > 0 else "0.0%",
+                "Day1留存小订": int(base_day1_cnt), "Day1转化率": conv_pct(day1_cnt, base_day1_cnt),
+                "前3日留存小订": int(base_top3_cnt), "前3日转化率": conv_pct(top3_cnt, base_top3_cnt),
+                "中间期留存小订": int(base_middle_cnt), "中间期转化率": conv_pct(middle_cnt, base_middle_cnt),
+                "倒数Day2留存小订": int(base_last_day2_cnt), "倒数Day2转化率": conv_pct(last_day2_cnt, base_last_day2_cnt),
+                "上市当日(倒数Day1)留存小订": int(base_last_day1_cnt), "上市当日转化率": conv_pct(last_day1_cnt, base_last_day1_cnt)
+            })
+        else:
+            # 没有锁单的车型
+            intention_group_conversion_results.append({
+                "车型": model,
+                "总体留存小订": retained_count, "总转化率": "0.0%",
+                "Day1留存小订": int(base_day1_cnt), "Day1转化率": "0.0%",
+                "前3日留存小订": int(base_top3_cnt), "前3日转化率": "0.0%",
+                "中间期留存小订": int(base_middle_cnt), "中间期转化率": "0.0%",
+                "倒数Day2留存小订": int(base_last_day2_cnt), "倒数Day2转化率": "0.0%",
+                "上市当日(倒数Day1)留存小订": int(base_last_day1_cnt), "上市当日转化率": "0.0%"
             })
         
         conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
@@ -216,6 +251,21 @@ def main():
             "倒数Day2", "倒数Day2占比", "倒数Day1(上市)", "倒数Day1占比"
         ]
         print(intention_dist_df[cols].to_string(index=False))
+
+    if intention_group_conversion_results:
+        conv_df = pd.DataFrame(intention_group_conversion_results)
+        print("\n--- 各车型预售各阶段【留存小订基数】及【对应的锁单转化率】 ---")
+        
+        # 调整列顺序便于查看
+        conv_cols = [
+            "车型", "总体留存小订", "总转化率",
+            "Day1留存小订", "Day1转化率",
+            "前3日留存小订", "前3日转化率",
+            "中间期留存小订", "中间期转化率",
+            "倒数Day2留存小订", "倒数Day2转化率",
+            "上市当日(倒数Day1)留存小订", "上市当日转化率"
+        ]
+        print(conv_df[conv_cols].to_string(index=False))
 
 if __name__ == "__main__":
     main()

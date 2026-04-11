@@ -1,28 +1,27 @@
-## 4. 上市后30日锁单的小订时间在预售周期内的分布规律 (Intention Time Distribution of 30-Day Lock Orders)
+## 5. 预售周期各阶段【留存小订基数】及【锁单转化率】 (Retention Base & Conversion Rate by Pre-sale Phases)
 
-### 4.1 业务定义
-提取那些在**上市后 30 日内发生了锁单**的留存小订订单，分析它们**当初下小订的时间**在整个预售期内的分布特征。借此观察高转化意向用户主要是“早鸟（预售前几天盲订）”、“中间观望者”还是“发布会/上市当天的冲动消费者”。
+### 5.1 业务定义
+结合第 4 部分的小订分布，进一步计算各个时间切片（Day1、前3日、中间期、倒数Day2、倒数Day1/上市当日）中，**所有下定且未退订的订单基数（留存小订总数）**，以及这部分基数中**最终在上市后30日内发生锁单**的比例（即该特定时间段小订人群的转化率）。
 
-### 4.2 核心计算口径
+### 5.2 核心计算口径
 
-1. **目标订单集：** 
-   取在“上市后30日内发生锁单行为”的所有预售期留存订单 (`locked_retained_df`)。
+1. **分段留存基数计算：**
+   提取符合“预售期内支付且留存”的完整订单集 `retained_intention_df`，并分别计算它们在各个预售切片阶段的总人数（逻辑同 4.2 中的相对天数划分）。
+   - `base_day1_cnt`: Day1留存小订数
+   - `base_top3_cnt`: 前3日留存小订数
+   - `base_middle_cnt`: 中间期留存小订数
+   - `base_last_day2_cnt`: 倒数Day2留存小订数
+   - `base_last_day1_cnt`: 倒数Day1(上市当日)留存小订数
 
-2. **相对时间计算（距离预售起点和终点）：**
-   提取目标订单的小订支付时间（`intention_payment_time`），分别计算其距离预售开始日 (`start_day`) 和预售结束日 (`end_day`) 的天数差（取整）：
-   - `intention_days_from_start = (intention_payment_time - start_day).dt.days`
-   - `intention_days_to_end = (end_day - intention_payment_time).dt.days`
-   *(注：使用日期级别（normalize）的运算以消除具体小时和分钟的误差)*
+2. **各阶段转化率计算公式：**
+   使用 4.2 节中已计算出的“该阶段成功锁单数量”除以“该阶段留存小订基数”。
+   - `Day1转化率 = day1_cnt / base_day1_cnt * 100%`
+   - `前3日转化率 = top3_cnt / base_top3_cnt * 100%`
+   - `中间期转化率 = middle_cnt / base_middle_cnt * 100%`
+   - `倒数Day2转化率 = last_day2_cnt / base_last_day2_cnt * 100%`
+   - `上市当日转化率 = last_day1_cnt / base_last_day1_cnt * 100%`
 
-3. **分段切分规则（Bucketing）：**
-   - **Day1 (预售首日)**: `intention_days_from_start == 0`
-   - **Day2 (预售次日)**: `intention_days_from_start == 1`
-   - **Day3 (预售第三日)**: `intention_days_from_start == 2`
-   - **前3日累计**: 以上三者之和
-   - **倒数Day1 (预售最后一天/上市日)**: `intention_days_to_end == 0`
-   - **倒数Day2 (上市前一日)**: `intention_days_to_end == 1`
-   - **倒数Day3 (上市前两日)**: `intention_days_to_end == 2`
-   - **中间期**: `总锁单数 - 前3日累计 - 倒数Day1 - 倒数Day2 - 倒数Day3`
-
-4. **占比计算公式：**
-   各分段锁单数 / 该车型“上市后30日锁单数”总和 * 100%。
+### 5.3 业务价值
+通过横向对比同一车型不同时间段的转化率，可以明确判断：
+1. **意向质量**：是否越早下订的用户转化率越高？
+2. **营销活动有效性**：上市发布会当天（倒数Day1）吸收了巨量的小订，这部分人群到底是高质量冲动购买者，还是凑热闹的低转化人群。
