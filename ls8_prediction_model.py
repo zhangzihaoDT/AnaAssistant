@@ -1,0 +1,87 @@
+import pandas as pd
+import json
+import numpy as np
+
+# Paths
+data_path = '/Users/zihao_/Documents/coding/dataset/formatted/order_data.parquet'
+biz_def_path = '/Users/zihao_/Documents/github/26W06_Tool_calls/schema/business_definition.json'
+
+# Load data
+df = pd.read_parquet(data_path)
+with open(biz_def_path, 'r') as f:
+    biz_def = json.load(f)
+
+time_periods = biz_def['time_periods']
+
+def get_model(product_name):
+    if pd.isna(product_name): return '其他'
+    product_name = str(product_name)
+    if '新一代' in product_name and 'LS6' in product_name: return 'CM2'
+    elif '全新' in product_name and 'LS6' in product_name: return 'CM1'
+    elif 'LS6' in product_name and '全新' not in product_name and '新一代' not in product_name: return 'CM0'
+    elif '全新' in product_name and 'L6' in product_name: return 'DM1'
+    elif 'L6' in product_name and '全新' not in product_name: return 'DM0'
+    elif 'LS8' in product_name: return 'LS8'
+    elif 'LS9' in product_name: return 'LS9'
+    return '其他'
+
+df['model'] = df['product_name'].apply(get_model)
+
+# Calculate LS8 Top 3 days intention orders
+ls8_start = pd.to_datetime(time_periods['LS8']['start'])
+ls8_end = pd.to_datetime(time_periods['LS8']['end'])
+ls8_window_end = ls8_start + pd.Timedelta(days=3)
+
+df_ls8 = df[df['model'] == 'LS8']
+mask_time = (df_ls8['intention_payment_time'].notna()) & \
+            (df_ls8['intention_payment_time'] >= ls8_start) & \
+            (df_ls8['intention_payment_time'] < ls8_window_end)
+mask_retained = df_ls8['intention_refund_time'].isna() | (df_ls8['intention_refund_time'] > ls8_window_end)
+ls8_top3_orders = df_ls8.loc[mask_time & mask_retained, 'order_number'].dropna().drop_duplicates().nunique()
+
+# Historical stats
+historical_data = {
+    "CM0": {"top3_retained": 3907, "top3_conversion": 0.403, "top3_pct_of_total_locks": 0.136, "total_locks": 11577},
+    "DM0": {"top3_retained": 3471, "top3_conversion": 0.172, "top3_pct_of_total_locks": 0.224, "total_locks": 2664},
+    "CM1": {"top3_retained": 2761, "top3_conversion": 0.411, "top3_pct_of_total_locks": 0.190, "total_locks": 5961},
+    "DM1": {"top3_retained": 3083, "top3_conversion": 0.367, "top3_pct_of_total_locks": 0.252, "total_locks": 4487},
+    "CM2": {"top3_retained": 7297, "top3_conversion": 0.448, "top3_pct_of_total_locks": 0.166, "total_locks": 19660},
+    "LS9": {"top3_retained": 4376, "top3_conversion": 0.354, "top3_pct_of_total_locks": 0.467, "total_locks": 3319},
+}
+
+conv_rates = [v['top3_conversion'] for v in historical_data.values()]
+pcts = [v['top3_pct_of_total_locks'] for v in historical_data.values()]
+
+scenarios = {
+    "保守预估 (取最差指标组合)": {"conv": min(conv_rates), "pct": max(pcts)},
+    "均值预估 (取历史平均)": {"conv": np.mean(conv_rates), "pct": np.mean(pcts)},
+    "乐观预估 (取最佳指标组合)": {"conv": max(conv_rates), "pct": min(pcts)},
+}
+
+print(f"\n【已知事实】LS8 前3日留存小订数: {ls8_top3_orders}")
+print("\n--- 基于历史前3日转化率及占比的推演模型 ---")
+for name, params in scenarios.items():
+    pred_locks = (ls8_top3_orders * params['conv']) / params['pct']
+    print(f"[{name}]")
+    print(f"  假定 前3日转化率: {params['conv']*100:.1f}%")
+    print(f"  假定 前3日锁单占总锁单比: {params['pct']*100:.1f}%")
+    print(f"  预测 LS8 30日总锁单: {int(pred_locks)}")
+
+X = np.array([v['top3_retained'] for v in historical_data.values()])
+Y = np.array([v['total_locks'] for v in historical_data.values()])
+n = len(X)
+m_x = np.mean(X)
+m_y = np.mean(Y)
+ss_xy = np.sum(Y*X) - n*m_y*m_x
+ss_xx = np.sum(X*X) - n*m_x*m_x
+slope = ss_xy / ss_xx
+intercept = m_y - slope*m_x
+
+r_num = (n*np.sum(X*Y) - np.sum(X)*np.sum(Y))
+r_den = np.sqrt((n*np.sum(X**2) - np.sum(X)**2)*(n*np.sum(Y**2) - np.sum(Y)**2))
+r_value = r_num / r_den
+
+print("\n--- 基于一元线性回归模型 (前3日小订数 -> 总锁单数) ---")
+print(f"方程: 30日总锁单 = {slope:.2f} * 前3日小订数 + {intercept:.2f} (R^2 = {r_value**2:.2f})")
+pred_reg = slope * ls8_top3_orders + intercept
+print(f"预测 LS8 30日总锁单: {int(pred_reg)}")
