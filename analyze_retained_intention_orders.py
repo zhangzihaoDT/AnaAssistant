@@ -51,7 +51,7 @@ def main():
     target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9", "LS8"]
     results = []
     distribution_results = []
-    all_lock_distribution_results = []
+    intention_timing_results = []
 
     for model in target_models:
         if model not in time_periods:
@@ -95,13 +95,14 @@ def main():
                     (df_model['lock_time'] >= listing_day) & \
                     (df_model['lock_time'] < lock_30d_end_excl)
                     
-        locked_orders_30d = df_model.loc[mask_lock, ['order_number', 'lock_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
+        locked_orders_30d = df_model.loc[mask_lock, ['order_number', 'lock_time', 'intention_payment_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
         
         # 留存小订中发生了上市后30日锁单的数量
         locked_retained_df = locked_orders_30d[locked_orders_30d['order_number'].isin(retained_orders)].copy()
         locked_count = int(locked_retained_df['order_number'].nunique())
         
         if locked_count > 0:
+            # 日分布统计
             locked_retained_df['days_since_listing'] = (locked_retained_df['lock_time'] - listing_day).dt.days
             daily_counts = locked_retained_df.groupby('days_since_listing')['order_number'].nunique()
             for day_idx, count in daily_counts.items():
@@ -111,23 +112,25 @@ def main():
                     "锁单数": int(count),
                     "占30日锁单比例": float(count) / locked_count
                 })
+                
+            # 新增：分析小订时间距离上市日的天数
+            locked_retained_df['days_to_listing'] = (locked_retained_df['intention_payment_time'].dt.normalize() - pd.to_datetime(listing_day).normalize()).dt.days
+            
+            bins = [-float('inf'), -22, -15, -8, -4, -1, 0, float('inf')]
+            labels = ['T-22及以前', 'T-15至T-21', 'T-8至T-14', 'T-4至T-7', 'T-1至T-3', '上市当天(T-0)', '上市后']
+            locked_retained_df['timing_bin'] = pd.cut(locked_retained_df['days_to_listing'], bins=bins, labels=labels)
+            
+            timing_counts = locked_retained_df.groupby('timing_bin', observed=False)['order_number'].nunique()
+            for bin_label, count in timing_counts.items():
+                intention_timing_results.append({
+                    "车型": model,
+                    "小订时间分布": bin_label,
+                    "锁单数": int(count),
+                    "占比": float(count) / locked_count
+                })
         
         conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
         
-        # 6. 计算大盘（全量）上市后30日锁单分布
-        total_locked_count = int(locked_orders_30d['order_number'].nunique())
-        if total_locked_count > 0:
-            locked_orders_30d_copy = locked_orders_30d.copy()
-            locked_orders_30d_copy['days_since_listing'] = (locked_orders_30d_copy['lock_time'] - listing_day).dt.days
-            daily_all_counts = locked_orders_30d_copy.groupby('days_since_listing')['order_number'].nunique()
-            for day_idx, count in daily_all_counts.items():
-                all_lock_distribution_results.append({
-                    "车型": model,
-                    "上市后第N天": int(day_idx) + 1,
-                    "全量锁单数": int(count),
-                    "占全量30日锁单比例": float(count) / total_locked_count
-                })
-
         results.append({
             "车型": model,
             "预售开始时间": time_periods[model]['start'],
@@ -182,18 +185,15 @@ def main():
         print("\n--- 各车型上市后核心周期（前1-3天及前7日）锁单分布与转化 ---")
         print(summary_df.to_string(index=False))
 
-    if all_lock_distribution_results:
-        all_dist_df = pd.DataFrame(all_lock_distribution_results)
+    if intention_timing_results:
+        timing_df = pd.DataFrame(intention_timing_results)
+        labels = ['T-22及以前', 'T-15至T-21', 'T-8至T-14', 'T-4至T-7', 'T-1至T-3', '上市当天(T-0)', '上市后']
+        pivot_timing_cnt = timing_df.pivot_table(index="小订时间分布", columns="车型", values="锁单数", fill_value=0).reindex(labels, fill_value=0)
+        pivot_timing_pct = timing_df.pivot_table(index="小订时间分布", columns="车型", values="占比", fill_value=0).reindex(labels, fill_value=0)
+        pivot_timing_pct_str = pivot_timing_pct.map(lambda x: f"{x*100:.1f}%")
         
-        # 补全1-30天的数据以防有的天数为0
-        all_days = list(range(1, 32))
-        pivot_all_pct = all_dist_df.pivot_table(index="上市后第N天", columns="车型", values="占全量30日锁单比例", fill_value=0).reindex(all_days, fill_value=0)
-        
-        # 格式化百分比
-        pivot_all_pct_str = pivot_all_pct.map(lambda x: f"{x*100:.1f}%")
-        
-        print("\n--- 大盘全量：各车型上市后30日内每日锁单占比分布 ---")
-        print(pivot_all_pct_str.to_string())
+        print("\n--- 各车型上市后30日内锁单的订单：小订支付时间距离上市日(T)的占比 ---")
+        print(pivot_timing_pct_str.to_string())
 
 if __name__ == "__main__":
     main()
