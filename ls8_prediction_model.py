@@ -41,30 +41,32 @@ ls8_top3_orders = df_ls8.loc[mask_time & mask_retained, 'order_number'].dropna()
 
 # Historical stats
 historical_data = {
-    "CM0": {"top3_retained": 3907, "top3_conversion": 0.403, "top3_pct_of_total_locks": 0.136, "total_locks": 11577},
-    "DM0": {"top3_retained": 3471, "top3_conversion": 0.172, "top3_pct_of_total_locks": 0.224, "total_locks": 2664},
-    "CM1": {"top3_retained": 2761, "top3_conversion": 0.411, "top3_pct_of_total_locks": 0.190, "total_locks": 5961},
-    "DM1": {"top3_retained": 3083, "top3_conversion": 0.367, "top3_pct_of_total_locks": 0.252, "total_locks": 4487},
-    "CM2": {"top3_retained": 7297, "top3_conversion": 0.448, "top3_pct_of_total_locks": 0.166, "total_locks": 19660},
-    "LS9": {"top3_retained": 4376, "top3_conversion": 0.354, "top3_pct_of_total_locks": 0.467, "total_locks": 3319},
+    "CM0": {"top3_retained": 3907, "total_retained": 24399, "total_locks": 11577},
+    "DM0": {"top3_retained": 3471, "total_retained": 14845, "total_locks": 2664},
+    "CM1": {"top3_retained": 2761, "total_retained": 21113, "total_locks": 5961},
+    "DM1": {"top3_retained": 3083, "total_retained": 14991, "total_locks": 4487},
+    "CM2": {"top3_retained": 7297, "total_retained": 49993, "total_locks": 19660},
+    "LS9": {"top3_retained": 4376, "total_retained": 8849, "total_locks": 3319},
 }
 
-conv_rates = [v['top3_conversion'] for v in historical_data.values()]
-pcts = [v['top3_pct_of_total_locks'] for v in historical_data.values()]
+top3_pcts = [v['top3_retained'] / v['total_retained'] for v in historical_data.values()]
+conv_rates_30d = [v['total_locks'] / v['total_retained'] for v in historical_data.values()]
 
 scenarios = {
-    "保守预估 (取最差指标组合)": {"conv": min(conv_rates), "pct": max(pcts)},
-    "均值预估 (取历史平均)": {"conv": np.mean(conv_rates), "pct": np.mean(pcts)},
-    "乐观预估 (取最佳指标组合)": {"conv": max(conv_rates), "pct": min(pcts)},
+    "保守预估 (高占比/低转化)": {"top3_pct": max(top3_pcts), "conv_30d": min(conv_rates_30d)},
+    "均值预估 (历史平均)": {"top3_pct": np.mean(top3_pcts), "conv_30d": np.mean(conv_rates_30d)},
+    "乐观预估 (低占比/高转化)": {"top3_pct": min(top3_pcts), "conv_30d": max(conv_rates_30d)},
 }
 
 print(f"\n【已知事实】LS8 前3日留存小订数: {ls8_top3_orders}")
-print("\n--- 基于历史前3日转化率及占比的推演模型 ---")
+print("\n--- 基于【前3日小订占比】及【30日总转化率】的推演模型 ---")
 for name, params in scenarios.items():
-    pred_locks = (ls8_top3_orders * params['conv']) / params['pct']
+    pred_total_retained = ls8_top3_orders / params['top3_pct']
+    pred_locks = pred_total_retained * params['conv_30d']
     print(f"[{name}]")
-    print(f"  假定 前3日转化率: {params['conv']*100:.1f}%")
-    print(f"  假定 前3日锁单占总锁单比: {params['pct']*100:.1f}%")
+    print(f"  假定 前3日小订占总小订比: {params['top3_pct']*100:.1f}%")
+    print(f"  推演 LS8 总留存小订数: {int(pred_total_retained)}")
+    print(f"  假定 30日总转化率: {params['conv_30d']*100:.1f}%")
     print(f"  预测 LS8 30日总锁单: {int(pred_locks)}")
 
 X = np.array([v['top3_retained'] for v in historical_data.values()])
