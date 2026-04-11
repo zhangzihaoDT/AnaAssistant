@@ -135,14 +135,37 @@ def main():
         pivot_count = dist_df.pivot_table(index="上市后第N天", columns="车型", values="锁单数", fill_value=0).reindex(all_days, fill_value=0)
         pivot_pct = dist_df.pivot_table(index="上市后第N天", columns="车型", values="占30日锁单比例", fill_value=0).reindex(all_days, fill_value=0)
         
-        # 格式化百分比
-        pivot_pct_str = pivot_pct.map(lambda x: f"{x*100:.1f}%")
+        # 汇总展示特定周期 (Day1, Day2, Day3, 前3日累计, 前7日累计)
+        summary_rows = []
+        summary_labels = ["Day1", "Day2", "Day3", "前3日累计", "前7日累计"]
         
-        print("\n--- 各车型上市后30日内每日锁单数分布 ---")
-        print(pivot_count.to_string())
+        for model in pivot_count.columns:
+            counts = pivot_count[model]
+            pcts = pivot_pct[model]
+            
+            d1_cnt, d1_pct = counts[1], pcts[1]
+            d2_cnt, d2_pct = counts[2], pcts[2]
+            d3_cnt, d3_pct = counts[3], pcts[3]
+            
+            top3_cnt = counts.loc[1:3].sum()
+            top3_pct = pcts.loc[1:3].sum()
+            
+            top7_cnt = counts.loc[1:7].sum()
+            top7_pct = pcts.loc[1:7].sum()
+            
+            summary_rows.append({
+                "车型": model,
+                "Day1_锁单": int(d1_cnt), "Day1_占比": f"{d1_pct*100:.1f}%",
+                "Day2_锁单": int(d2_cnt), "Day2_占比": f"{d2_pct*100:.1f}%",
+                "Day3_锁单": int(d3_cnt), "Day3_占比": f"{d3_pct*100:.1f}%",
+                "前3日累计_锁单": int(top3_cnt), "前3日累计_占比": f"{top3_pct*100:.1f}%",
+                "前7日累计_锁单": int(top7_cnt), "前7日累计_占比": f"{top7_pct*100:.1f}%"
+            })
+            
+        summary_df = pd.DataFrame(summary_rows)
         
-        print("\n--- 各车型上市后30日内每日锁单占比分布 ---")
-        print(pivot_pct_str.to_string())
+        print("\n--- 各车型上市后核心周期（前1-3天及前7日）锁单分布与转化 ---")
+        print(summary_df.to_string(index=False))
 
 if __name__ == "__main__":
     main()
