@@ -208,12 +208,12 @@ def main():
         intention_dist_df = pd.DataFrame(intention_dist_results)
         print("\n--- 各车型上市后30日锁单的小订时间在预售周期内的分布 ---")
         
-        # 调整列顺序便于查看
+        # 调整列顺序便于查看，并根据要求简化 CLI 输出
         cols = [
             "车型", "总锁单", 
-            "Day1", "Day1占比", "Day2", "Day2占比", "Day3", "Day3占比", "前3日累计", "前3日占比",
+            "Day1", "Day1占比", "前3日累计", "前3日占比",
             "中间期", "中间占比",
-            "倒数Day3", "倒数Day3占比", "倒数Day2", "倒数Day2占比", "倒数Day1(上市)", "倒数Day1占比"
+            "倒数Day2", "倒数Day2占比", "倒数Day1(上市)", "倒数Day1占比"
         ]
         print(intention_dist_df[cols].to_string(index=False))
 
