@@ -1,25 +1,18 @@
-## 6. 上市后前3日锁单的小订时间在预售周期的分布规律 (Intention Time Distribution of Top-3-Day Lock Orders)
+## 7. 上市后【Day1】锁单的小订时间在预售周期的分布规律 (Intention Time Distribution of Day-1 Lock Orders)
 
-### 6.1 业务定义
-提取那些在**上市后前 3 天内（即最高爆发期）发生了锁单**的订单，进一步分析这群“最果断、行动最快的真实买家”在当初下小订时，是集中在预售的什么时间段。此项分析旨在回答：**上市初期的锁单爆发，到底是前期积累的盲订客户爆发，还是上市发布会带来的新增客流转化？**
+### 7.1 业务定义
+提取在**上市后第一天（Day1）就完成了锁单**的最核心、行动最果断的顶尖买家，分析他们下小订（交意向金）的日期分布。此项指标是反映“盲订忠诚度”和“核心基盘粉丝转化力度”的最敏感探针。
 
-### 6.2 核心计算口径
+### 7.2 核心计算口径
 
 1. **目标订单集提取：**
-   在 `locked_retained_df`（包含上市后30天内锁单的留存小订订单）中，进一步过滤出锁单发生距离上市日 `< 3` 天的订单，即 `days_since_listing \in [0, 1, 2]`：
+   在 `locked_retained_df` 中，进一步过滤出 `days_since_listing == 0`（即上市当天）的订单：
    ```python
-   top3_locked_df = locked_retained_df[locked_retained_df['days_since_listing'] < 3].copy()
+   day1_locked_df = locked_retained_df[locked_retained_df['days_since_listing'] == 0].copy()
    ```
 
 2. **意向时间分组与相对天数计算：**
-   对 `top3_locked_df` 这部分订单，通过之前挂载的 `intention_days_from_start` (距离预售首日) 和 `intention_days_to_end` (距离预售末日) 字段进行分组计算。
+   逻辑与第 6 节完全一致，对 `day1_locked_df` 订单按照 `intention_days_from_start` 和 `intention_days_to_end` 分别划归到不同切片（Day1、前3日、中间期、倒数Day2、倒数Day1/上市日）。
 
-3. **分段切分规则（与30日分布一致）：**
-   - **Day1 (预售首日)**
-   - **前3日累计** (预售 Day1+Day2+Day3)
-   - **中间期** (总数剔除头尾)
-   - **倒数Day2 (上市前一日)**
-   - **倒数Day1 (预售最后一天/上市日)**
-
-4. **占比计算公式：**
-   `各分段对应锁单数 / 目标车型前3日总锁单数 * 100%`
+3. **占比计算公式：**
+   `各分段对应锁单数 / 目标车型Day1总锁单数 * 100%`

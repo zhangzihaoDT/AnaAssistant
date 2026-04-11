@@ -54,6 +54,7 @@ def main():
     intention_dist_results = []
     intention_group_conversion_results = []
     top3_locked_intention_dist_results = []
+    day1_locked_intention_dist_results = []
 
     for model in target_models:
         if model not in time_periods:
@@ -201,6 +202,35 @@ def main():
                     "倒数Day2": int(t3_last_day2_cnt), "倒数Day2占比": pct_t3(t3_last_day2_cnt),
                     "倒数Day1(上市)": int(t3_last_day1_cnt), "倒数Day1占比": pct_t3(t3_last_day1_cnt)
                 })
+                
+            # === 新增：分析上市后【Day1】锁单订单的“小订时间”在预售周期的分布 ===
+            day1_locked_df = locked_retained_df[locked_retained_df['days_since_listing'] == 0].copy()
+            locked_count_day1 = int(day1_locked_df['order_number'].nunique())
+            
+            if locked_count_day1 > 0:
+                d1_day1_cnt = (day1_locked_df['intention_days_from_start'] == 0).sum()
+                d1_day2_cnt = (day1_locked_df['intention_days_from_start'] == 1).sum()
+                d1_day3_cnt = (day1_locked_df['intention_days_from_start'] == 2).sum()
+                d1_top3_cnt = d1_day1_cnt + d1_day2_cnt + d1_day3_cnt
+                
+                d1_last_day3_cnt = (day1_locked_df['intention_days_to_end'] == 2).sum()
+                d1_last_day2_cnt = (day1_locked_df['intention_days_to_end'] == 1).sum()
+                d1_last_day1_cnt = (day1_locked_df['intention_days_to_end'] == 0).sum()
+                
+                d1_middle_cnt = locked_count_day1 - d1_top3_cnt - d1_last_day1_cnt - d1_last_day2_cnt - d1_last_day3_cnt
+                
+                def pct_d1(c):
+                    return f"{c/locked_count_day1*100:.1f}%" if locked_count_day1 > 0 else "0.0%"
+                
+                day1_locked_intention_dist_results.append({
+                    "车型": model,
+                    "Day1总锁单": locked_count_day1,
+                    "Day1": int(d1_day1_cnt), "Day1占比": pct_d1(d1_day1_cnt),
+                    "前3日累计": int(d1_top3_cnt), "前3日占比": pct_d1(d1_top3_cnt),
+                    "中间期": int(d1_middle_cnt), "中间占比": pct_d1(d1_middle_cnt),
+                    "倒数Day2": int(d1_last_day2_cnt), "倒数Day2占比": pct_d1(d1_last_day2_cnt),
+                    "倒数Day1(上市)": int(d1_last_day1_cnt), "倒数Day1占比": pct_d1(d1_last_day1_cnt)
+                })
         else:
             # 没有锁单的车型
             intention_group_conversion_results.append({
@@ -308,6 +338,18 @@ def main():
             "倒数Day2", "倒数Day2占比", "倒数Day1(上市)", "倒数Day1占比"
         ]
         print(top3_dist_df[cols_t3].to_string(index=False))
+
+    if day1_locked_intention_dist_results:
+        day1_dist_df = pd.DataFrame(day1_locked_intention_dist_results)
+        print("\n--- 各车型上市后【Day1】锁单的小订时间在预售周期内的分布 ---")
+        
+        cols_d1 = [
+            "车型", "Day1总锁单", 
+            "Day1", "Day1占比", "前3日累计", "前3日占比",
+            "中间期", "中间占比",
+            "倒数Day2", "倒数Day2占比", "倒数Day1(上市)", "倒数Day1占比"
+        ]
+        print(day1_dist_df[cols_d1].to_string(index=False))
 
 if __name__ == "__main__":
     main()
