@@ -1,0 +1,106 @@
+# 业务指标计算口径 (Business Operators)
+
+## 1. 预售期留存小订数 (Retained Intention Orders in Presale Period)
+
+### 1.1 业务定义
+统计在各车型指定“预售周期”内支付小订，并且在“预售周期结束时”尚未退订（依然保持小订状态）的独立订单数量。
+
+### 1.2 数据源与依赖字段
+- **订单数据表**：`order_data.parquet`
+  - `model` / `series_group_logic`: 车型分类
+  - `order_number`: 订单编号（用于去重）
+  - `intention_payment_time`: 小订支付时间
+  - `intention_refund_time`: 小订退款时间
+- **业务定义表**：`business_definition.json` (`time_periods` 字典)
+  - `start`: 预售开始日期
+  - `end`: 预售结束日期
+
+### 1.3 核心计算口径
+
+1. **时间窗口定义 (Time Window)**
+   - **开始时间 (`start_day`)**: `time_periods` 中定义的 `start` 日期（包含当天）。
+   - **结束时间边界 (`window_end_excl`)**: `time_periods` 中定义的 `end` 日期的次日零点（Exclusive）。即时间窗口为 `[start_day, end_day + 1天)`。
+
+2. **小订支付条件 (Intention Payment Condition)**
+   - 订单的小订支付时间 (`intention_payment_time`) 必须非空。
+   - 支付时间需落在预售时间窗口内：
+     ```python
+     (intention_payment_time >= start_day) & (intention_payment_time < window_end_excl)
+     ```
+
+3. **留存判定条件 (Retention Condition)**
+   - 订单在预售期结束时未发生退款。满足以下任意一条即视为“留存”：
+     - 小订退款时间 (`intention_refund_time`) 为空（即至今未退款）。
+     - 或者，小订退款时间晚于预售时间窗口的结束边界（即在预售期结束后才发生的退款，在预售期内仍算作留存）。
+     ```python
+     intention_refund_time.isna() | (intention_refund_time > window_end_excl)
+     ```
+
+4. **订单去重计数 (Distinct Count)**
+   - 满足上述条件的订单，基于订单编号 (`order_number`) 提取并去除重复项（`.drop_duplicates()`）。
+   - 最终计算去重后的订单编号数量（`nunique()`）。
+
+## 2. 留存小订的上市后30日锁单数与转化率 (30-Day Lock Orders & Conversion Rate for Retained Intentions)
+
+### 2.1 业务定义
+基于上一阶段确定的“预售期留存小订”集合，统计这批订单在上市日期（含）起的 30 天内，发生锁单（Lock）行为的订单数量，并计算这部分订单占所有留存小订的转化率。
+
+### 2.2 额外依赖字段
+- **订单数据表**：`order_data.parquet`
+  - `lock_time`: 订单锁单时间
+- **业务定义表**：`business_definition.json`
+  - `finish`: 数据统计截断日（部分车型存在，未存在则使用默认边界）
+
+### 2.3 核心计算口径
+
+1. **上市日期定义 (Listing Day)**
+   - 一般取预售结束日期 (`end_day`)。
+   - **特例：** 对于 `CM0` 车型，因历史原因，上市日期特殊处理为预售结束日期的次日（`end_day + 1天`）。
+
+2. **30日锁单时间窗口 (30-Day Lock Window)**
+   - **开始时间 (`listing_day`)**：上述定义的上市日期（包含当天 00:00:00）。
+   - **结束边界 (`lock_30d_end_excl`)**：取“上市日向后推 31 天（即 +31 days，exclusive）” 与 “最终统计截断日的次日零点 (`finish_excl`)” 之间的**较小值**。
+   - 这意味着有效锁单时间段为：`[listing_day, lock_30d_end_excl)`。
+
+3. **锁单统计条件 (Lock Condition)**
+   - 锁单时间 (`lock_time`) 必须非空。
+   - 锁单时间落在 30日锁单时间窗口内：
+     ```python
+     (lock_time >= listing_day) & (lock_time < lock_30d_end_excl)
+     ```
+   - 此订单**必须**同时属于第一步筛选出的“预售期留存小订”订单池。
+
+4. **指标计算公式**
+   - **上市后30日锁单数 (`locked_count`)**：同时满足预售期留存且在锁单时间窗口内锁单的唯一订单总数。
+   - **转化率 (`conversion_rate`)**：`上市后30日锁单数 / 预售期留存小订总数 * 100%`。
+
+### 2.4 参考代码实现 (Python/Pandas)
+```python
+# 确定上市日
+listing_day = end_day
+if model == "CM0":
+    listing_day = listing_day + pd.Timedelta(days=1)
+    
+# 确定最终截断日边界
+finish_str = time_periods[model].get('finish')
+finish_day = pd.to_datetime(finish_str) if finish_str else listing_day
+finish_excl = finish_day + pd.Timedelta(days=1)
+
+# 计算30日锁单的时间排他性边界
+lock_30d_end_excl = min(listing_day + pd.Timedelta(days=31), finish_excl)
+
+# 锁单时间范围掩码
+mask_lock = (df_model['lock_time'].notna()) & \
+            (df_model['lock_time'] >= listing_day) & \
+            (df_model['lock_time'] < lock_30d_end_excl)
+            
+# 提取在窗口期内锁单的订单并去重
+locked_orders_30d = df_model.loc[mask_lock, 'order_number'].dropna().drop_duplicates()
+
+# 取交集：留存小订中发生了上市后30日锁单的订单
+locked_retained_orders = locked_orders_30d[locked_orders_30d.isin(retained_orders)]
+locked_count = int(locked_retained_orders.nunique())
+
+# 计算转化率
+conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
+```

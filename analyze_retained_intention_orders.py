@@ -78,11 +78,36 @@ def main():
         retained_orders = df_model.loc[mask_time & mask_retained, 'order_number'].dropna().drop_duplicates()
         retained_count = int(retained_orders.nunique())
         
+        # 计算上市后30日锁单数与转化率
+        listing_day = end_day
+        if model == "CM0":
+            listing_day = listing_day + pd.Timedelta(days=1)
+            
+        finish_str = time_periods[model].get('finish')
+        finish_day = pd.to_datetime(finish_str) if finish_str else listing_day
+        finish_excl = finish_day + pd.Timedelta(days=1)
+        
+        lock_30d_end_excl = min(listing_day + pd.Timedelta(days=31), finish_excl)
+        
+        mask_lock = (df_model['lock_time'].notna()) & \
+                    (df_model['lock_time'] >= listing_day) & \
+                    (df_model['lock_time'] < lock_30d_end_excl)
+                    
+        locked_orders_30d = df_model.loc[mask_lock, 'order_number'].dropna().drop_duplicates()
+        
+        # 留存小订中发生了上市后30日锁单的数量
+        locked_retained_orders = locked_orders_30d[locked_orders_30d.isin(retained_orders)]
+        locked_count = int(locked_retained_orders.nunique())
+        
+        conversion_rate = (locked_count / retained_count * 100) if retained_count > 0 else 0.0
+        
         results.append({
             "车型": model,
             "预售开始时间": time_periods[model]['start'],
             "预售结束时间": time_periods[model]['end'],
-            "留存小订数": retained_count
+            "留存小订数": retained_count,
+            "上市后30日锁单数": locked_count,
+            "转化率": f"{conversion_rate:.1f}%"
         })
 
     # 5. 输出结果
