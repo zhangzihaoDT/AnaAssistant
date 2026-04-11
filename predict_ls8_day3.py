@@ -37,32 +37,32 @@ mask_time = (df_ls8['intention_payment_time'].notna()) & \
             (df_ls8['intention_payment_time'] >= ls8_start) & \
             (df_ls8['intention_payment_time'] < ls8_window_end)
 mask_retained = df_ls8['intention_refund_time'].isna() | (df_ls8['intention_refund_time'] > ls8_window_end)
-ls8_top3_orders = df_ls8.loc[mask_time & mask_retained, 'order_number'].dropna().drop_duplicates().nunique()
+ls8_day3_orders = df_ls8.loc[mask_time & mask_retained, 'order_number'].dropna().drop_duplicates().nunique()
 
 # Historical stats
 historical_data = {
-    "CM0": {"presale_top3_retained": 3907, "listing_top3_locks": 3837, "locks_from_presale_top3": 588},
-    "DM0": {"presale_top3_retained": 3471, "listing_top3_locks": 1444, "locks_from_presale_top3": 358},
-    "CM1": {"presale_top3_retained": 2761, "listing_top3_locks": 2923, "locks_from_presale_top3": 683},
-    "DM1": {"presale_top3_retained": 3083, "listing_top3_locks": 2055, "locks_from_presale_top3": 633},
-    "CM2": {"presale_top3_retained": 7297, "listing_top3_locks": 8154, "locks_from_presale_top3": 1934},
-    "LS9": {"presale_top3_retained": 4376, "listing_top3_locks": 2133, "locks_from_presale_top3": 1035},
+    "CM0": {"presale_day3_retained": 3907, "listing_day3_locks": 3837, "locks_from_presale_day3": 588},
+    "DM0": {"presale_day3_retained": 3471, "listing_day3_locks": 1444, "locks_from_presale_day3": 358},
+    "CM1": {"presale_day3_retained": 2761, "listing_day3_locks": 2923, "locks_from_presale_day3": 683},
+    "DM1": {"presale_day3_retained": 3083, "listing_day3_locks": 2055, "locks_from_presale_day3": 633},
+    "CM2": {"presale_day3_retained": 7297, "listing_day3_locks": 8154, "locks_from_presale_day3": 1934},
+    "LS9": {"presale_day3_retained": 4376, "listing_day3_locks": 2133, "locks_from_presale_day3": 1035},
 }
 
-print(f"\n【已知事实】LS8 预售前3日留存小订数: {ls8_top3_orders}")
+print(f"\n【已知事实】LS8 预售前3日留存小订数: {ls8_day3_orders}")
 print("\n--- 预测 LS8 上市后【前3日】锁单数 (基于各历史车型实际表现) ---")
 for model_name, stats in historical_data.items():
-    conv = stats['locks_from_presale_top3'] / stats['presale_top3_retained']
-    pct = stats['locks_from_presale_top3'] / stats['listing_top3_locks']
-    pred_locks = (ls8_top3_orders * conv) / pct
+    conv = stats['locks_from_presale_day3'] / stats['presale_day3_retained']
+    pct = stats['locks_from_presale_day3'] / stats['listing_day3_locks']
+    pred_locks = (ls8_day3_orders * conv) / pct
     
     print(f"[对标 {model_name}]")
     print(f"  假定 预售前3日小订 在 上市前3日的转化率: {conv*100:.1f}%")
     print(f"  假定 上市前3日锁单中 预售前3日小订占比: {pct*100:.1f}%")
     print(f"  预测 LS8 上市后前3日总锁单: {int(pred_locks)}")
 
-X = np.array([v['presale_top3_retained'] for v in historical_data.values()])
-Y = np.array([v['listing_top3_locks'] for v in historical_data.values()])
+X = np.array([v['presale_day3_retained'] for v in historical_data.values()])
+Y = np.array([v['listing_day3_locks'] for v in historical_data.values()])
 n = len(X)
 m_x = np.mean(X)
 m_y = np.mean(Y)
@@ -77,5 +77,5 @@ r_value = r_num / r_den
 
 print("\n--- 基于一元线性回归模型 (预售前3日小订数 -> 上市后前3日锁单数) ---")
 print(f"方程: 上市前3日锁单 = {slope:.2f} * 预售前3日小订数 + {intercept:.2f} (R^2 = {r_value**2:.2f})")
-pred_reg = slope * ls8_top3_orders + intercept
+pred_reg = slope * ls8_day3_orders + intercept
 print(f"预测 LS8 上市后前3日锁单: {int(pred_reg)}")
