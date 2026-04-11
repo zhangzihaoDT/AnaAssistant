@@ -41,12 +41,12 @@ ls8_day3_orders = df_ls8.loc[mask_time & mask_retained, 'order_number'].dropna()
 
 # Historical stats
 historical_data = {
-    "CM0": {"presale_day3_retained": 3907, "listing_day3_locks": 3837, "locks_from_presale_day3": 588},
-    "DM0": {"presale_day3_retained": 3471, "listing_day3_locks": 1444, "locks_from_presale_day3": 358},
-    "CM1": {"presale_day3_retained": 2761, "listing_day3_locks": 2923, "locks_from_presale_day3": 683},
-    "DM1": {"presale_day3_retained": 3083, "listing_day3_locks": 2055, "locks_from_presale_day3": 633},
-    "CM2": {"presale_day3_retained": 7297, "listing_day3_locks": 8154, "locks_from_presale_day3": 1934},
-    "LS9": {"presale_day3_retained": 4376, "listing_day3_locks": 2133, "locks_from_presale_day3": 1035},
+    "CM0": {"presale_day3_retained": 3907, "listing_day3_locks": 3837, "locks_from_presale_day3": 588, "total_retained": 24399, "last_day2_retained": 2041, "last_day1_retained": 6517},
+    "DM0": {"presale_day3_retained": 3471, "listing_day3_locks": 1444, "locks_from_presale_day3": 358, "total_retained": 14845, "last_day2_retained": 1583, "last_day1_retained": 3539},
+    "CM1": {"presale_day3_retained": 2761, "listing_day3_locks": 2923, "locks_from_presale_day3": 683, "total_retained": 21113, "last_day2_retained": 2665, "last_day1_retained": 3737},
+    "DM1": {"presale_day3_retained": 3083, "listing_day3_locks": 2055, "locks_from_presale_day3": 633, "total_retained": 14991, "last_day2_retained": 1147, "last_day1_retained": 3750},
+    "CM2": {"presale_day3_retained": 7297, "listing_day3_locks": 8154, "locks_from_presale_day3": 1934, "total_retained": 49993, "last_day2_retained": 7731, "last_day1_retained": 14342},
+    "LS9": {"presale_day3_retained": 4376, "listing_day3_locks": 2133, "locks_from_presale_day3": 1035, "total_retained": 8849, "last_day2_retained": 893, "last_day1_retained": 1567},
 }
 
 print(f"\n【已知事实】LS8 预售前3日留存小订数: {ls8_day3_orders}")
@@ -56,10 +56,18 @@ for model_name, stats in historical_data.items():
     pct = stats['locks_from_presale_day3'] / stats['listing_day3_locks']
     pred_locks = (ls8_day3_orders * conv) / pct
     
+    scale_factor = ls8_day3_orders / stats['presale_day3_retained']
+    req_total = stats['total_retained'] * scale_factor
+    req_last_day2 = stats['last_day2_retained'] * scale_factor
+    req_last_day1 = stats['last_day1_retained'] * scale_factor
+    
     print(f"[对标 {model_name}]")
     print(f"  假定 预售前3日小订 在 上市前3日的转化率: {conv*100:.1f}%")
     print(f"  假定 上市前3日锁单中 预售前3日小订占比: {pct*100:.1f}%")
     print(f"  预测 LS8 上市后前3日总锁单: {int(pred_locks)}")
+    print(f"  -> 隐含条件：若完全对标 {model_name} 的客群结构，LS8 需在整个预售期达成【累计留存小订】: {int(req_total)} 单")
+    print(f"  -> 隐含条件：其中倒数Day2小订数应达: {int(req_last_day2)} 单")
+    print(f"  -> 隐含条件：其中上市当天(倒数Day1)小订数应达: {int(req_last_day1)} 单")
 
 X = np.array([v['presale_day3_retained'] for v in historical_data.values()])
 Y = np.array([v['listing_day3_locks'] for v in historical_data.values()])
