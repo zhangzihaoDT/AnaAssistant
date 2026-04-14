@@ -11,6 +11,7 @@
 - 业务处理 (operators/)：处理具有强业务口径的特殊查询算子。
 - 独立分析脚本 (scripts/)：包含各种业务分析、回测和预测的脚本（如 index_summary.py，预测滚动回测等）。
 - 对外接入：通过 feishu_bot.py 接入飞书提供交互，入口由 main.py 负责代理。
+- 业务特征技能（Skills）：沉淀了可复用的高优业务分析工具（如 `high-refund-lock-risk`、`index-summary-eval`），可通过 `.trae/skills/` 独立调用或被 Agent 调度。
 
 ## 系统定位
 
@@ -33,6 +34,33 @@
 - **Operators Layer**：承接强口径指标固定算子（如在营门店数），避免通用 DSL 口径漂移。
 - **Schema Aware**：规划阶段显式注入 schema 与业务定义，提高字段/指标映射准确性。
 - **Clarification Memory**：需要澄清时暂存上下文，下一轮自动合并后继续规划。
+
+## 业务特征技能（Skills）
+
+为了解决特定业务场景下的复杂诊断问题，项目中沉淀了独立的特征分析技能（Skills）。这些技能不仅可以直接作为脚本独立运行，也可以被 Agent 作为子能力调度。
+
+### 1. `high-refund-lock-risk`（高退订率锁单特征）
+
+**使用场景**：基于“2025-11-12 大促冲量后高退订”画像，对某日锁单进行高退订风险查验与反推诊断。用于排查某日锁单是否呈现异常的高风险形态（如锁后未推进付款/金融、用户信息不完善、锁单过快、风险门店聚集）。
+
+**执行示例**：
+```bash
+source .venv/bin/activate
+python .trae/skills/high-refund-lock-risk/scripts/lock_refund_risk_check.py --date 2025-11-12
+```
+
+**诊断能力**：
+- **Prospective（前置查验）**：仅基于当日可观测信息（付款/金融动作、客群年龄/性别等）判定是否属于高风险锁单。
+- **Retrospective（回溯比对）**：若当日已发生退订，比对“退订人群”与“留存人群”的特征差异（Delta），判断其模式是否属于异常的集中清退/刷单。
+
+### 2. `index-summary-eval`（每日指标状态评估）
+
+**使用场景**：对 `index_summary.py` 的单日或区间 JSON 输出执行状态评估。通过 Volume/Conversion 双因子模型计算历史分位，输出该日的诊断结论（High/Mid/Low）及相似历史日期推荐。
+
+**执行示例**：
+```bash
+python .trae/skills/index-summary-eval/scripts/evaluation_engine.py --input-json output.json --scope auto
+```
 
 ## 执行流程
 
