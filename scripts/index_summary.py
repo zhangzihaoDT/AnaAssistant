@@ -221,6 +221,10 @@ def _calc_order_metrics(
         "store_create_date",
         "order_create_date",
         "invoice_amount",
+        "intention_payment_time",
+        "intention_refund_time",
+        "deposit_payment_time",
+        "deposit_refund_time",
     ]
     df = pd.read_parquet(order_path, columns=cols)
 
@@ -230,9 +234,40 @@ def _calc_order_metrics(
     lock_mask = df["lock_time"].notna() & (df["lock_time"] >= start) & (df["lock_time"] < end)
     invoice_mask = df["invoice_upload_time"].notna() & (df["invoice_upload_time"] >= start) & (df["invoice_upload_time"] < end)
 
-    locked = df.loc[lock_mask, ["order_number", "approve_refund_time"]]
+    locked = df.loc[lock_mask, ["order_number", "approve_refund_time", "intention_payment_time", "intention_refund_time", "deposit_payment_time", "lock_time"]]
     lock_count = int(locked["order_number"].nunique())
     invoice_count = int(df.loc[invoice_mask, "order_number"].nunique())
+
+    user_car_mask = df["order_type"] == "用户车"
+    user_lock_mask = lock_mask & user_car_mask
+    locked_user_car = df.loc[
+        user_lock_mask,
+        [
+            "order_number",
+            "intention_payment_time",
+            "intention_refund_time",
+            "deposit_payment_time",
+            "lock_time",
+        ],
+    ]
+    user_car_lock_count = int(locked_user_car["order_number"].nunique())
+
+    cond_intention = locked_user_car["intention_payment_time"].notna() & (
+        locked_user_car["intention_refund_time"].isna()
+        | (locked_user_car["intention_refund_time"] > locked_user_car["lock_time"])
+    )
+    cond_deposit = (~cond_intention) & locked_user_car["deposit_payment_time"].notna()
+    locked_deposit = locked_user_car[cond_deposit]
+
+    path_intention = int(locked_user_car.loc[cond_intention, "order_number"].nunique())
+    
+    path_retained_deposit_conv = int(locked_deposit.loc[locked_deposit["deposit_payment_time"] < start, "order_number"].nunique())
+    path_today_deposit_conv = int(locked_deposit.loc[(locked_deposit["deposit_payment_time"] >= start) & (locked_deposit["deposit_payment_time"] < end), "order_number"].nunique())
+
+    historic_deposit = user_car_mask & df["deposit_payment_time"].notna() & (df["deposit_payment_time"] >= start) & (df["deposit_payment_time"] < end)
+    not_locked_yet = df["lock_time"].isna() | (df["lock_time"] >= end)
+    not_refunded_yet = df["deposit_refund_time"].isna() | (df["deposit_refund_time"] >= end)
+    path_today_deposit_unlocked = int(df.loc[historic_deposit & not_locked_yet & not_refunded_yet, "order_number"].nunique())
 
     lock_refund_count = int(
         locked.loc[locked["approve_refund_time"].notna(), "order_number"].nunique()
@@ -335,10 +370,17 @@ def _calc_order_metrics(
 
     return {
         "锁单数": lock_count,
+        "锁单数（order_type =用户车）": user_car_lock_count,
+        "锁单路径盘点": [
+            {"留存小订转化": path_intention},
+            {"留存大定转化": path_retained_deposit_conv},
+            {"当日大定转化": path_today_deposit_conv},
+            {"当日大定留存": path_today_deposit_unlocked},
+        ],
         "锁单人数": lock_people_count,
         "锁单人数（order_type != 试驾车）": lock_people_count_non_test_drive,
         "开票数": invoice_count,
-        "锁单退订数": lock_refund_count,
+        "累计锁单退订数": lock_refund_count,
         "留存锁单数": lock_retained_count,
         "在营门店数": active_store_count,
         "CR5门店销量集中度": _to_percent_1dp(cr5_store),
@@ -670,6 +712,10 @@ def _load_order_df(order_path: Path) -> pd.DataFrame:
         "store_city",
         "store_create_date",
         "order_create_date",
+        "intention_payment_time",
+        "intention_refund_time",
+        "deposit_payment_time",
+        "deposit_refund_time",
     ]
     return pd.read_parquet(order_path, columns=cols)
 
@@ -683,9 +729,40 @@ def _calc_order_metrics_from_df(
     lock_mask = df["lock_time"].notna() & (df["lock_time"] >= start) & (df["lock_time"] < end)
     invoice_mask = df["invoice_upload_time"].notna() & (df["invoice_upload_time"] >= start) & (df["invoice_upload_time"] < end)
 
-    locked = df.loc[lock_mask, ["order_number", "approve_refund_time"]]
+    locked = df.loc[lock_mask, ["order_number", "approve_refund_time", "intention_payment_time", "intention_refund_time", "deposit_payment_time", "lock_time"]]
     lock_count = int(locked["order_number"].nunique())
     invoice_count = int(df.loc[invoice_mask, "order_number"].nunique())
+
+    user_car_mask = df["order_type"] == "用户车"
+    user_lock_mask = lock_mask & user_car_mask
+    locked_user_car = df.loc[
+        user_lock_mask,
+        [
+            "order_number",
+            "intention_payment_time",
+            "intention_refund_time",
+            "deposit_payment_time",
+            "lock_time",
+        ],
+    ]
+    user_car_lock_count = int(locked_user_car["order_number"].nunique())
+
+    cond_intention = locked_user_car["intention_payment_time"].notna() & (
+        locked_user_car["intention_refund_time"].isna()
+        | (locked_user_car["intention_refund_time"] > locked_user_car["lock_time"])
+    )
+    cond_deposit = (~cond_intention) & locked_user_car["deposit_payment_time"].notna()
+    locked_deposit = locked_user_car[cond_deposit]
+
+    path_intention = int(locked_user_car.loc[cond_intention, "order_number"].nunique())
+    
+    path_retained_deposit_conv = int(locked_deposit.loc[locked_deposit["deposit_payment_time"] < start, "order_number"].nunique())
+    path_today_deposit_conv = int(locked_deposit.loc[(locked_deposit["deposit_payment_time"] >= start) & (locked_deposit["deposit_payment_time"] < end), "order_number"].nunique())
+
+    historic_deposit = user_car_mask & df["deposit_payment_time"].notna() & (df["deposit_payment_time"] >= start) & (df["deposit_payment_time"] < end)
+    not_locked_yet = df["lock_time"].isna() | (df["lock_time"] >= end)
+    not_refunded_yet = df["deposit_refund_time"].isna() | (df["deposit_refund_time"] >= end)
+    path_today_deposit_unlocked = int(df.loc[historic_deposit & not_locked_yet & not_refunded_yet, "order_number"].nunique())
 
     lock_refund_count = int(
         locked.loc[locked["approve_refund_time"].notna(), "order_number"].nunique()
@@ -788,10 +865,17 @@ def _calc_order_metrics_from_df(
 
     return {
         "锁单数": lock_count,
+        "锁单数（order_type =用户车）": user_car_lock_count,
+        "锁单路径盘点": [
+            {"留存小订转化": path_intention},
+            {"留存大定转化": path_retained_deposit_conv},
+            {"当日大定转化": path_today_deposit_conv},
+            {"当日大定留存": path_today_deposit_unlocked},
+        ],
         "锁单人数": lock_people_count,
         "锁单人数（order_type != 试驾车）": lock_people_count_non_test_drive,
         "开票数": invoice_count,
-        "锁单退订数": lock_refund_count,
+        "累计锁单退订数": lock_refund_count,
         "留存锁单数": lock_retained_count,
         "在营门店数": active_store_count,
         "CR5门店销量集中度": _to_percent_1dp(cr5_store),
@@ -1240,7 +1324,12 @@ def _merge_daily_matrices(base: dict[str, object], inc: dict[str, object]) -> di
                     continue
                 merged_values[metric][col] = values[i]
 
-    merged_rows = [{"metric": m, "values": [merged_values[m].get(c) for c in merged_cols]} for m in metric_order]
+    removed_metrics = {"订单分析.当日锁单退订数"}
+    merged_rows = [
+        {"metric": m, "values": [merged_values[m].get(c) for c in merged_cols]}
+        for m in metric_order
+        if m not in removed_metrics
+    ]
     return {"columns": merged_cols, "rows": merged_rows}
 
 

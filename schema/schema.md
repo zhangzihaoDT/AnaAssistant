@@ -61,6 +61,11 @@
 - **交付数**: `order_number` 计数 (必须添加过滤条件: `delivery_date` 非空)。注意：时间筛选应基于 `delivery_date`。
 - **开票数**: `order_number` 计数 (必须添加过滤条件: `invoice_upload_time` 非空)。注意：时间筛选应基于 `invoice_upload_time`，而不是 `order_create_date`。
 - **小订数**: `order_number` 计数 (必须添加过滤条件: `intention_payment_time` 非空)。注意：时间筛选应基于 `intention_payment_time`。
+- **大定数**: `order_number` 计数 (必须添加过滤条件: `deposit_payment_time` 非空)。注意：时间筛选应基于 `deposit_payment_time`。
+- **留存小订单数**: 统计在指定时间窗口内支付小订，且在时间窗口结束时未发生退款的独立订单数量。
+  - 该指标由算子层统一计算：`operators/retained_intention.py`，优先走固定算子而不是通用 DSL 聚合。
+  - 时间筛选应基于 `intention_payment_time`。
+  - 注意：如果过滤条件是 `series` 等于某个车型（如 CM2, LS8），该字段在算子内部将优先使用 `series_group_logic` 进行精确匹配（如果有的话）。
 - **开票金额**: `invoice_amount` (求和/平均)
 - **订单计数**: `order_number` 计数
 - **在营门店数**: 以目标日 `d` 统计，口径为“最近 30 天内有活动且在 `d` 当天已开店的门店数”。

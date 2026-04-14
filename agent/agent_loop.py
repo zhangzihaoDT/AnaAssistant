@@ -203,12 +203,13 @@ def _trim_text(text: str, limit: int = 1800) -> str:
 
 def _generate_final_answer(client: OpenAI, user_query: str, result_blocks: list[str]) -> str:
     print("\n[Thinking] AnalysisAgent 正在生成最终回答...")
+    joined_results = '\n\n---\n\n'.join(result_blocks)
     messages = [
         {
             "role": "system",
             "content": FINAL_ANSWER_SYSTEM_PROMPT,
         },
-        {"role": "user", "content": f"用户问题: {user_query}\n\n{'\n\n---\n\n'.join(result_blocks)}"},
+        {"role": "user", "content": f"用户问题: {user_query}\n\n{joined_results}"},
     ]
     final_response = client.chat.completions.create(model="deepseek-chat", messages=messages)
     return final_response.choices[0].message.content or ""

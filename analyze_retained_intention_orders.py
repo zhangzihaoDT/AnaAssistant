@@ -21,8 +21,9 @@ warnings.filterwarnings('ignore')
 
 def main():
     # 1. 配置数据源路径
+    import pathlib
     data_path = '/Users/zihao_/Documents/coding/dataset/formatted/order_data.parquet'
-    biz_def_path = '/Users/zihao_/Documents/github/26W06_Tool_calls/schema/business_definition.json'
+    biz_def_path = str(pathlib.Path(__file__).resolve().parent / 'schema' / 'business_definition.json')
 
     # 2. 加载数据
     print("正在加载数据...")
@@ -64,6 +65,7 @@ def main():
     # 4. 计算指定车型的预售期留存小订数
     target_models = ["CM0", "DM0", "CM1", "DM1", "CM2", "LS9"]
     results = []
+    lock_30d_results = []
     distribution_results = []
     intention_dist_results = []
     intention_group_conversion_results = []
@@ -118,6 +120,34 @@ def main():
         # 留存小订中发生了上市后30日锁单的数量
         locked_retained_df = locked_orders_30d[locked_orders_30d['order_number'].isin(retained_orders)].copy()
         locked_count = int(locked_retained_df['order_number'].nunique())
+        
+        locked_orders_30d_count = int(locked_orders_30d['order_number'].nunique())
+        retained_lock_ratio = (locked_count / locked_orders_30d_count * 100) if locked_orders_30d_count > 0 else 0.0
+        
+        # 计算首日 (Day1) 的对应数据
+        lock_day1_end_excl = listing_day + pd.Timedelta(days=1)
+        mask_lock_day1 = (df_model['lock_time'].notna()) & \
+                         (df_model['lock_time'] >= listing_day) & \
+                         (df_model['lock_time'] < lock_day1_end_excl)
+        
+        locked_orders_day1 = df_model.loc[mask_lock_day1, ['order_number']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
+        locked_orders_day1_count = int(locked_orders_day1['order_number'].nunique())
+        
+        locked_retained_day1_df = locked_orders_day1[locked_orders_day1['order_number'].isin(retained_orders)]
+        locked_day1_count = int(locked_retained_day1_df['order_number'].nunique())
+        
+        retained_lock_ratio_day1 = (locked_day1_count / locked_orders_day1_count * 100) if locked_orders_day1_count > 0 else 0.0
+        
+        lock_30d_results.append({
+            "车型": model,
+            "上市开始时间": listing_day.strftime('%Y-%m-%d'),
+            "上市后30日锁单数": locked_orders_30d_count,
+            "上市后30日留存小订转化数": locked_count,
+            "留存小订转化占比": f"{retained_lock_ratio:.1f}%",
+            "上市后首日锁单数": locked_orders_day1_count,
+            "上市后首日留存小订转化数": locked_day1_count,
+            "首日留存小订转化占比": f"{retained_lock_ratio_day1:.1f}%"
+        })
         
         # === 新增/扩展：计算预售周期各阶段的【留存小订总数】和【对应的锁单转化率】 ===
         # 将留存小订 (retained_orders) 结合意向支付时间提取出来
@@ -289,6 +319,11 @@ def main():
         })
 
     # 5. 输出结果
+    if lock_30d_results:
+        lock_30d_df = pd.DataFrame(lock_30d_results)
+        print("\n--- 各车型上市 30 日锁单数计算结果 ---")
+        print(lock_30d_df.to_string(index=False))
+
     results_df = pd.DataFrame(results)
     print("\n--- 各车型预售周期留存小订数计算结果 ---")
     print(results_df.to_string(index=False))
@@ -330,7 +365,7 @@ def main():
             
         summary_df = pd.DataFrame(summary_rows)
         
-        print("\n--- 各车型上市后核心周期（前1-3天及前7日）锁单分布与转化 ---")
+        print("\n--- 各车型上市后核心周期（前1-3天及前7日）锁单分布 ---")
         print(summary_df.to_string(index=False))
 
     if intention_dist_results:
@@ -398,55 +433,146 @@ def main():
         ls8_retained_df = df_ls8.loc[mask_time_ls8 & mask_retained_ls8, ['order_number', 'intention_payment_time']].drop_duplicates(subset=['order_number'])
         
         ls8_retained_df['days_from_start'] = (ls8_retained_df['intention_payment_time'].dt.normalize() - ls8_start.normalize()).dt.days
+        ls8_retained_df['days_to_end'] = (ls8_end.normalize() - ls8_retained_df['intention_payment_time'].dt.normalize()).dt.days
         
         ls8_day1_cnt = (ls8_retained_df['days_from_start'] == 0).sum()
         ls8_top3_cnt = (ls8_retained_df['days_from_start'] < 3).sum()
         
         ls8_max_day = ls8_retained_df['days_from_start'].max()
-        
-        # 第4日是 index 3
-        ls8_day4_to_max = ls8_retained_df[(ls8_retained_df['days_from_start'] >= 3) & (ls8_retained_df['days_from_start'] <= ls8_max_day)]
-        ls8_day4_to_max_cnt = len(ls8_day4_to_max)
-        ls8_day4_to_max_days = ls8_max_day - 3 + 1 if ls8_max_day >= 3 else 0
+        # 由于运行当日的数据通常不完整，使用 max_day - 1 作为完整的测算范围卡点
+        # 如果 max_day 为 0（即预售第一天刚开始），则降级为 0
+        ls8_effective_max_day = max(0, ls8_max_day - 1) if pd.notna(ls8_max_day) else 0
         
         total_presale_days = (ls8_end - ls8_start).days + 1
-        middle_period_days = total_presale_days - 3 - 3
+        middle_period_days = max(0, total_presale_days - 3 - 3)
         
-        ls8_middle_avg = ls8_day4_to_max_cnt / ls8_day4_to_max_days if ls8_day4_to_max_days > 0 else 0
-        ls8_projected_middle = ls8_middle_avg * middle_period_days
+        # 中间期实际已发生的完整天数对应的订单
+        ls8_middle_df = ls8_retained_df[(ls8_retained_df['days_from_start'] >= 3) & 
+                                        (ls8_retained_df['days_from_start'] <= ls8_effective_max_day) & 
+                                        (ls8_retained_df['days_to_end'] >= 3)]
+        ls8_middle_actual_cnt = len(ls8_middle_df)
+        
+        max_middle_day_idx = total_presale_days - 1 - 3  # 中间期最后一天（不含末尾3天）的索引
+        
+        effective_middle_max = min(ls8_effective_max_day, max_middle_day_idx)
+        passed_middle_days = effective_middle_max - 3 + 1 if effective_middle_max >= 3 else 0
+        
+        ls8_middle_avg = ls8_middle_actual_cnt / passed_middle_days if passed_middle_days > 0 else 0
+        remaining_middle_days = middle_period_days - passed_middle_days
+        ls8_projected_middle = ls8_middle_actual_cnt + ls8_middle_avg * remaining_middle_days
+        
+        # 对于末尾3日，我们也用 max_day - 1（即 effective_max_day）来判断该天的数据是否完整
+        # 如果 effective_max_day 已经覆盖了倒数第X天，说明那天数据完整了，可以作为真实基数
+        
+        last_day3_idx = total_presale_days - 3
+        last_day2_idx = total_presale_days - 2
+        last_day1_idx = total_presale_days - 1
+        
+        # 实际小订量
+        actual_last_day3 = (ls8_retained_df['days_to_end'] == 2).sum()
+        actual_last_day2 = (ls8_retained_df['days_to_end'] == 1).sum()
+        actual_last_day1 = (ls8_retained_df['days_to_end'] == 0).sum()
+        
+        # 如果当天不完整（effective_max_day 还未覆盖到它），我们需要结合历史比例进行“当天未完成的推演”
+        # 所以这里仅保留“完整跑完”的标记
+        is_last_day3_complete = ls8_effective_max_day >= last_day3_idx
+        is_last_day2_complete = ls8_effective_max_day >= last_day2_idx
+        is_last_day1_complete = ls8_effective_max_day >= last_day1_idx
+        
+        date_last_day3 = ls8_end.normalize() - pd.Timedelta(days=2)
+        date_last_day2 = ls8_end.normalize() - pd.Timedelta(days=1)
+        date_last_day1 = ls8_end.normalize()
+        
+        # 提取 LS8 实际锁单数据 (如果已发生锁单)
+        mask_lock_ls8 = df_ls8['lock_time'].notna()
+        ls8_locked_orders = df_ls8.loc[mask_lock_ls8, ['order_number', 'lock_time']].dropna(subset=['order_number']).drop_duplicates(subset=['order_number'])
+        ls8_locked_retained_df = ls8_locked_orders[ls8_locked_orders['order_number'].isin(ls8_retained_df['order_number'])].copy()
+        
+        if not ls8_locked_retained_df.empty:
+            ls8_locked_retained_df = ls8_locked_retained_df.merge(ls8_retained_df[['order_number', 'days_from_start', 'days_to_end']], on='order_number', how='left')
+            actual_lock_last_day3 = (ls8_locked_retained_df['days_to_end'] == 2).sum()
+            actual_lock_last_day2 = (ls8_locked_retained_df['days_to_end'] == 1).sum()
+            actual_lock_last_day1 = (ls8_locked_retained_df['days_to_end'] == 0).sum()
+            actual_lock_top3 = (ls8_locked_retained_df['days_from_start'] < 3).sum()
+            actual_lock_middle = len(ls8_locked_retained_df) - actual_lock_top3 - actual_lock_last_day3 - actual_lock_last_day2 - actual_lock_last_day1
+        else:
+            actual_lock_last_day3 = actual_lock_last_day2 = actual_lock_last_day1 = 0
+            actual_lock_top3 = actual_lock_middle = 0
         
         projection_results = []
-        ls8_combined_base = ls8_top3_cnt + ls8_projected_middle
         for hist in retained_intention_dist_results:
             hist_model = hist['车型']
             hist_total = hist['总留存小订']
             if hist_total == 0:
                 continue
                 
-            hist_day1_ratio = hist['Day1'] / hist_total
             hist_top3_ratio = hist['前3日累计'] / hist_total
             hist_middle_ratio = hist['中间期'] / hist_total
-            hist_top3_middle_ratio = hist_top3_ratio + hist_middle_ratio
+            hist_last_day3_ratio = hist['倒数Day2'] / hist_total
+            hist_last_day2_ratio = hist['倒数Day1'] / hist_total
+            hist_last_day1_ratio = hist['倒数Day0(上市当天)'] / hist_total
             
-            proj_combined = ls8_combined_base / hist_top3_middle_ratio if hist_top3_middle_ratio > 0 else 0
-            proj_last3 = proj_combined - ls8_combined_base
+            # 构建投影基数 (已知的前3天 + 完整或推演的中间期)
+            base_count = ls8_top3_cnt + ls8_projected_middle
+            base_ratio = hist_top3_ratio + hist_middle_ratio
+            
+            # 如果末尾某天数据完整，将其计入基数
+            if is_last_day3_complete:
+                base_count += actual_last_day3
+                base_ratio += hist_last_day3_ratio
+            if is_last_day2_complete:
+                base_count += actual_last_day2
+                base_ratio += hist_last_day2_ratio
+            if is_last_day1_complete:
+                base_count += actual_last_day1
+                base_ratio += hist_last_day1_ratio
+                
+            proj_total_base = base_count / base_ratio if base_ratio > 0 else 0
+            
+            # 计算倒数3天的推演值
+            # 如果数据完整 -> 用实际值 (已计入基数)
+            # 如果不完整 -> 取实际值与推演值的较大者
+            if is_last_day3_complete:
+                proj_last_day3 = actual_last_day3
+            else:
+                proj_last_day3 = max(actual_last_day3, proj_total_base * hist_last_day3_ratio)
+                
+            if is_last_day2_complete:
+                proj_last_day2 = actual_last_day2
+            else:
+                proj_last_day2 = max(actual_last_day2, proj_total_base * hist_last_day2_ratio)
+                
+            if is_last_day1_complete:
+                proj_last_day1 = actual_last_day1
+            else:
+                proj_last_day1 = max(actual_last_day1, proj_total_base * hist_last_day1_ratio)
+                
+            proj_last3_total = proj_last_day3 + proj_last_day2 + proj_last_day1
+            proj_combined = ls8_top3_cnt + ls8_projected_middle + proj_last3_total
             
             projection_results.append({
                 "参考历史车型": hist_model,
-                "历史前3日占比": f"{hist_top3_ratio*100:.1f}%",
-                "历史中间期占比": f"{hist_middle_ratio*100:.1f}%",
-                "合计占比(前3+中间期)": f"{hist_top3_middle_ratio*100:.1f}%",
-                "综合推演末尾3日增量": int(proj_last3),
-                "综合推演最终值": int(proj_combined)
+                "推演末尾Day2": int(proj_last_day3),
+                "推演末尾Day1": int(proj_last_day2),
+                "推演末尾Day0": int(proj_last_day1),
+                "综合推演末尾3日增量": int(proj_last3_total),
+                "综合推演最终值": int(proj_combined),
+                "_proj_last_day3": proj_last_day3,
+                "_proj_last_day2": proj_last_day2,
+                "_proj_last_day1": proj_last_day1
             })
             
         if projection_results:
             proj_df = pd.DataFrame(projection_results)
-            print(f"\n--- LS8 最终留存小订数推演 (结合已知前3日 + 中间期推演) ---")
+            display_cols = [
+                "参考历史车型", "推演末尾Day2", "推演末尾Day1", "推演末尾Day0", 
+                "综合推演末尾3日增量", "综合推演最终值"
+            ]
+            print(f"\n--- LS8 最终留存小订数推演 (结合已知数据 + 动态推演) ---")
             print(f"当前已知前3日累计: {ls8_top3_cnt}")
-            print(f"中间期推演: 日均 {ls8_middle_avg:.1f} x {middle_period_days}天 = {int(ls8_projected_middle)}")
-            print(f"推演综合基数 (前3日 + 中间期): {int(ls8_combined_base)}")
-            print(proj_df.to_string(index=False))
+            print(f"中间期: 已过 {passed_middle_days} 天 (实际 {ls8_middle_actual_cnt}), 剩余 {remaining_middle_days} 天推演为 {int(ls8_projected_middle - ls8_middle_actual_cnt)}, 中间期合计: {int(ls8_projected_middle)}")
+            print(f"末尾3日当前实际值 - Day2: {actual_last_day3}, Day1: {actual_last_day2}, Day0: {actual_last_day1}")
+            print(proj_df[display_cols].to_string(index=False))
             
             conv_map = {d["车型"]: d for d in intention_group_conversion_results if "车型" in d}
             retained_map = {d["车型"]: d for d in retained_intention_dist_results if "车型" in d}
@@ -465,28 +591,15 @@ def main():
                     return float(s) / 100.0
                 except Exception:
                     return 0.0
-                    
-            def alloc_last3(total, hist_dist):
-                d2 = int(hist_dist.get("倒数Day2", 0))
-                d1 = int(hist_dist.get("倒数Day1", 0))
-                d0 = int(hist_dist.get("倒数Day0(上市当天)", 0))
-                s = d2 + d1 + d0
-                if total <= 0:
-                    return 0, 0, 0
-                if s <= 0:
-                    base = int(total // 3)
-                    r = int(total - base * 3)
-                    return base, base, base + r
-                a2 = int(round(total * d2 / s))
-                a1 = int(round(total * d1 / s))
-                a0 = int(total - a2 - a1)
-                return a2, a1, a0
                 
             lock_projection_rows = []
             for row in projection_results:
                 hist_model = row["参考历史车型"]
                 proj_total = int(row["综合推演最终值"])
-                proj_last3 = int(row["综合推演末尾3日增量"])
+                
+                proj_last_day3 = row["_proj_last_day3"]
+                proj_last_day2 = row["_proj_last_day2"]
+                proj_last_day1 = row["_proj_last_day1"]
                 
                 conv = conv_map.get(hist_model, {})
                 hist_dist = retained_map.get(hist_model, {})
@@ -494,32 +607,26 @@ def main():
                 rate_top3 = parse_pct(conv.get("前3日转化率"))
                 rate_middle = parse_pct(conv.get("中间期转化率"))
                 
-                # 提取历史末尾3日留存和转化率，计算综合的“末尾3日转化率”
-                hist_base_last2 = int(conv.get("倒数Day2留存小订", 0))
-                hist_base_last1 = int(conv.get("倒数Day1留存小订", 0))
-                hist_base_last0 = int(conv.get("倒数Day0(上市当天)留存小订", 0))
-                
-                rate_last2 = parse_pct(conv.get("倒数Day2转化率"))
-                rate_last1 = parse_pct(conv.get("倒数Day1转化率"))
-                rate_last0 = parse_pct(conv.get("倒数Day0转化率"))
-                
-                hist_lock_last2 = hist_base_last2 * rate_last2
-                hist_lock_last1 = hist_base_last1 * rate_last1
-                hist_lock_last0 = hist_base_last0 * rate_last0
-                
-                hist_base_last3_total = hist_base_last2 + hist_base_last1 + hist_base_last0
-                hist_lock_last3_total = hist_lock_last2 + hist_lock_last1 + hist_lock_last0
-                
-                rate_last3_overall = hist_lock_last3_total / hist_base_last3_total if hist_base_last3_total > 0 else 0.0
+                rate_last_day3 = parse_pct(conv.get("倒数Day2转化率"))
+                rate_last_day2 = parse_pct(conv.get("倒数Day1转化率"))
+                rate_last_day1 = parse_pct(conv.get("倒数Day0转化率"))
                 
                 # 开始推演
                 ls8_base_top3 = int(ls8_top3_cnt)
                 ls8_base_middle = int(round(ls8_projected_middle))
-                ls8_base_last3 = proj_last3
                 
-                lock_top3 = ls8_base_top3 * rate_top3
-                lock_middle = ls8_base_middle * rate_middle
-                lock_last3 = ls8_base_last3 * rate_last3_overall
+                # 计算锁单推演值并与实际发生值取较大者 (避免推演低于实际)
+                lock_top3 = max(actual_lock_top3, ls8_base_top3 * rate_top3)
+                lock_middle = max(actual_lock_middle, ls8_base_middle * rate_middle)
+                
+                lock_last_day3 = max(actual_lock_last_day3, proj_last_day3 * rate_last_day3)
+                lock_last_day2 = max(actual_lock_last_day2, proj_last_day2 * rate_last_day2)
+                lock_last_day1 = max(actual_lock_last_day1, proj_last_day1 * rate_last_day1)
+                
+                lock_last3 = lock_last_day3 + lock_last_day2 + lock_last_day1
+                proj_last3_total = proj_last_day3 + proj_last_day2 + proj_last_day1
+                
+                rate_last3_overall = lock_last3 / proj_last3_total if proj_last3_total > 0 else 0.0
                 
                 lock_total = lock_top3 + lock_middle + lock_last3
                 
@@ -532,7 +639,7 @@ def main():
                     "前3日推演锁单": int(round(lock_top3)),
                     "历史中间期转化率": f"{rate_middle*100:.1f}%",
                     "中间期推演锁单": int(round(lock_middle)),
-                    "历史末尾3日转化率": f"{rate_last3_overall*100:.1f}%",
+                    "综合末尾3日转化率": f"{rate_last3_overall*100:.1f}%",
                     "末尾3日推演锁单": int(round(lock_last3))
                 })
                 
@@ -542,11 +649,49 @@ def main():
                     "参考历史车型", "推演留存小订", "推演30日锁单", "推演转化率",
                     "历史前3日转化率", "前3日推演锁单", 
                     "历史中间期转化率", "中间期推演锁单",
-                    "历史末尾3日转化率", "末尾3日推演锁单"
+                    "综合末尾3日转化率", "末尾3日推演锁单"
                 ]
-                print(f"\n--- LS8 上市后30日锁单数推演 (前3日 + 中间期 + 末尾3日 分别代入转化率) ---")
+                print(f"\n--- LS8 上市后30日锁单数推演 (前3日 + 中间期 + 末尾3日分别代入转化率) ---")
                 print(f"前3日已知基数: {ls8_top3_cnt}, 中间期推演基数: {int(ls8_projected_middle)}")
                 print(lock_df[cols].to_string(index=False))
+
+    # === 新增：推演 LS8 上市后首日 Day1 锁单数 ===
+    if 'lock_projection_rows' in locals() and 'summary_rows' in locals() and lock_30d_results:
+        ls8_day1_projection_results = []
+        
+        lock_30d_map = {d["车型"]: d for d in lock_30d_results}
+        summary_map = {d["车型"]: d for d in summary_rows}
+        
+        for row in lock_projection_rows:
+            hist_model = row["参考历史车型"]
+            proj_30d_lock = row["推演30日锁单"]
+            
+            lock_30d_info = lock_30d_map.get(hist_model)
+            summary_info = summary_map.get(hist_model)
+            
+            if lock_30d_info and summary_info:
+                day1_retained_ratio_str = lock_30d_info.get("首日留存小订转化占比", "0.0%")
+                day1_retained_ratio = float(day1_retained_ratio_str.strip('%')) / 100.0 if day1_retained_ratio_str != "0.0%" else 0.0
+                
+                day1_ratio_str = summary_info.get("Day1_占比", "0.0%")
+                day1_ratio = float(day1_ratio_str.strip('%')) / 100.0 if day1_ratio_str != "0.0%" else 0.0
+                
+                if day1_retained_ratio > 0:
+                    ls8_day1_lock = proj_30d_lock * day1_ratio / day1_retained_ratio
+                    
+                    ls8_day1_projection_results.append({
+                        "参考历史车型": hist_model,
+                        "推演30日锁单(留存转化)": proj_30d_lock,
+                        "首日留存小订转化占比": f"{day1_retained_ratio*100:.1f}%",
+                        "Day1_占比": f"{day1_ratio*100:.1f}%",
+                        "推演LS8首日Day1锁单数": int(round(ls8_day1_lock))
+                    })
+                    
+        if ls8_day1_projection_results:
+            day1_proj_df = pd.DataFrame(ls8_day1_projection_results)
+            print("\n--- 推演 LS8 上市后首日 Day1 锁单数 ---")
+            print("计算逻辑：推演LS8首日Day1锁单数 = 推演30日锁单(留存转化) * Day1_占比 / 首日留存小订转化占比")
+            print(day1_proj_df.to_string(index=False))
 
     if top3_locked_intention_dist_results:
         top3_dist_df = pd.DataFrame(top3_locked_intention_dist_results)

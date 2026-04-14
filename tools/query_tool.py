@@ -219,9 +219,15 @@ class QueryTool:
                     continue
 
             if op == "==":
-                df = df[df[field] == value]
+                if value is None:
+                    df = df[df[field].isna()]
+                else:
+                    df = df[df[field] == value]
             elif op == "!=":
-                df = df[df[field] != value]
+                if value is None:
+                    df = df[df[field].notna()]
+                else:
+                    df = df[df[field] != value]
             elif op == ">":
                 df = df[df[field] > value]
             elif op == "<":

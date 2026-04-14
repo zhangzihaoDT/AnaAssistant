@@ -277,6 +277,8 @@ class PlanningAgent:
             start_date = _safe_date(y1, m1, d1)
             end_date = _safe_date(y2, m2, d2)
             if start_date and end_date:
+                if "留存" in q or "预售期" in q:
+                    return (start_date.isoformat(), end_date.isoformat())
                 end_open = end_date + datetime.timedelta(days=1)
                 return (start_date.isoformat(), end_open.isoformat())
 
@@ -320,6 +322,8 @@ class PlanningAgent:
         if m:
             start_date = datetime.date.fromisoformat(m.group(1))
             end_date = datetime.date.fromisoformat(m.group(2))
+            if "留存" in q or "预售期" in q:
+                return (start_date.isoformat(), end_date.isoformat())
             end_open = end_date + datetime.timedelta(days=1)
             return (start_date.isoformat(), end_open.isoformat())
 
@@ -375,6 +379,13 @@ class PlanningAgent:
                 "metric": {"field": "order_number", "agg": "count", "alias": "小订数", "business_name": "小订数"},
                 "time_field": "intention_payment_time",
                 "non_null_field": "intention_payment_time",
+            }
+        if "大定" in q or "定金" in q:
+            return {
+                "dataset": "order_data",
+                "metric": {"field": "order_number", "agg": "count", "alias": "大定数", "business_name": "大定数"},
+                "time_field": "deposit_payment_time",
+                "non_null_field": "deposit_payment_time",
             }
         return None
 
