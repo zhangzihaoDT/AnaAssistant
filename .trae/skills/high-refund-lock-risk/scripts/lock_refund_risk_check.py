@@ -207,6 +207,9 @@ def main() -> None:
     locked_user["final_payment_way_na"] = locked_user["final_payment_way"].isna()
     locked_user["finance_product_na"] = locked_user["finance_product"].isna()
     locked_user["in_watchlist_store"] = locked_user["store_name"].isin(watchlist_stores)
+    locked_user["in_lhasa_hq_store"] = (
+        locked_user["store_city"].astype("string") == "拉萨市"
+    ) & (locked_user["store_name"].astype("string") == "总部主理店")
 
     intention_time = pd.to_datetime(locked_user["intention_payment_time"], errors="coerce")
     intention_to_lock_hours = (
@@ -224,6 +227,8 @@ def main() -> None:
         "owner_age_median": float(locked_user["owner_age"].median()) if not locked_user.empty else None,
         "intention_to_lock_hours": _describe_hours(intention_to_lock_hours),
         "watchlist_store_lock_share": _safe_share(locked_user["in_watchlist_store"]),
+        "lhasa_hq_store_lock_share": _safe_share(locked_user["in_lhasa_hq_store"]),
+        "lhasa_hq_store_lock_cnt": int(locked_user.loc[locked_user["in_lhasa_hq_store"], "order_number"].nunique()),
     }
 
     retrospective = {}
@@ -300,6 +305,7 @@ def main() -> None:
     gna = metrics["gender_unknown_share"]
     itl_median = metrics["intention_to_lock_hours"]["median"]
     wl = metrics["watchlist_store_lock_share"]
+    lhasa_hq = metrics["lhasa_hq_store_lock_share"]
 
     _flag(
         "final_payment_way_na_share",
@@ -332,6 +338,21 @@ def main() -> None:
         f">={thresholds.get('watchlist_store_lock_share')}",
         wl is not None and wl >= float(thresholds.get("watchlist_store_lock_share", 1.0)),
     )
+    if thresholds.get("lhasa_hq_store_lock_share") is None:
+        _flag(
+            "lhasa_hq_store_lock_share",
+            lhasa_hq,
+            ">0",
+            lhasa_hq is not None and lhasa_hq > 0.0,
+        )
+    else:
+        _flag(
+            "lhasa_hq_store_lock_share",
+            lhasa_hq,
+            f">={thresholds.get('lhasa_hq_store_lock_share')}",
+            lhasa_hq is not None
+            and lhasa_hq >= float(thresholds.get("lhasa_hq_store_lock_share", 1.0)),
+        )
 
     hit_cnt = sum(1 for x in risk_flags if x["hit"])
     overall = "high" if hit_cnt >= 3 else "mid" if hit_cnt == 2 else "low"
@@ -339,6 +360,8 @@ def main() -> None:
     suspicious = {
         "stores_top": _top_table(locked_user, "store_name", "in_watchlist_store", 20),
         "cities_top": _top_table(locked_user, "store_city", "in_watchlist_store", 20),
+        "lhasa_hq_store_lock_cnt": metrics["lhasa_hq_store_lock_cnt"],
+        "lhasa_hq_store_lock_share": metrics["lhasa_hq_store_lock_share"],
     }
     if "is_canceled" in locked_user.columns:
         suspicious["stores_by_cancel_rate_top"] = _top_cancel_rate_table(

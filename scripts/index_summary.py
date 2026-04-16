@@ -239,7 +239,11 @@ def _calc_order_metrics(
     invoice_count = int(df.loc[invoice_mask, "order_number"].nunique())
 
     user_car_mask = df["order_type"] == "用户车"
-    user_lock_mask = lock_mask & user_car_mask
+    hq_mask = (df["store_city"].astype("string") == "拉萨市") & (
+        df["store_name"].astype("string") == "总部主理店"
+    )
+    hq_mask = hq_mask.fillna(False)
+    user_lock_mask = lock_mask & user_car_mask & (~hq_mask)
     locked_user_car = df.loc[
         user_lock_mask,
         [
@@ -264,7 +268,13 @@ def _calc_order_metrics(
     path_retained_deposit_conv = int(locked_deposit.loc[locked_deposit["deposit_payment_time"] < start, "order_number"].nunique())
     path_today_deposit_conv = int(locked_deposit.loc[(locked_deposit["deposit_payment_time"] >= start) & (locked_deposit["deposit_payment_time"] < end), "order_number"].nunique())
 
-    historic_deposit = user_car_mask & df["deposit_payment_time"].notna() & (df["deposit_payment_time"] >= start) & (df["deposit_payment_time"] < end)
+    historic_deposit = (
+        user_car_mask
+        & (~hq_mask)
+        & df["deposit_payment_time"].notna()
+        & (df["deposit_payment_time"] >= start)
+        & (df["deposit_payment_time"] < end)
+    )
     not_locked_yet = df["lock_time"].isna() | (df["lock_time"] >= end)
     not_refunded_yet = df["deposit_refund_time"].isna() | (df["deposit_refund_time"] >= end)
     path_today_deposit_unlocked = int(df.loc[historic_deposit & not_locked_yet & not_refunded_yet, "order_number"].nunique())
@@ -370,7 +380,7 @@ def _calc_order_metrics(
 
     return {
         "锁单数": lock_count,
-        "锁单数（order_type =用户车）": user_car_lock_count,
+        "锁单数（order_type =用户车&非总部）": user_car_lock_count,
         "锁单路径盘点": [
             {"留存小订转化": path_intention},
             {"留存大定转化": path_retained_deposit_conv},
@@ -734,7 +744,11 @@ def _calc_order_metrics_from_df(
     invoice_count = int(df.loc[invoice_mask, "order_number"].nunique())
 
     user_car_mask = df["order_type"] == "用户车"
-    user_lock_mask = lock_mask & user_car_mask
+    hq_mask = (df["store_city"].astype("string") == "拉萨市") & (
+        df["store_name"].astype("string") == "总部主理店"
+    )
+    hq_mask = hq_mask.fillna(False)
+    user_lock_mask = lock_mask & user_car_mask & (~hq_mask)
     locked_user_car = df.loc[
         user_lock_mask,
         [
@@ -759,7 +773,13 @@ def _calc_order_metrics_from_df(
     path_retained_deposit_conv = int(locked_deposit.loc[locked_deposit["deposit_payment_time"] < start, "order_number"].nunique())
     path_today_deposit_conv = int(locked_deposit.loc[(locked_deposit["deposit_payment_time"] >= start) & (locked_deposit["deposit_payment_time"] < end), "order_number"].nunique())
 
-    historic_deposit = user_car_mask & df["deposit_payment_time"].notna() & (df["deposit_payment_time"] >= start) & (df["deposit_payment_time"] < end)
+    historic_deposit = (
+        user_car_mask
+        & (~hq_mask)
+        & df["deposit_payment_time"].notna()
+        & (df["deposit_payment_time"] >= start)
+        & (df["deposit_payment_time"] < end)
+    )
     not_locked_yet = df["lock_time"].isna() | (df["lock_time"] >= end)
     not_refunded_yet = df["deposit_refund_time"].isna() | (df["deposit_refund_time"] >= end)
     path_today_deposit_unlocked = int(df.loc[historic_deposit & not_locked_yet & not_refunded_yet, "order_number"].nunique())
@@ -865,7 +885,7 @@ def _calc_order_metrics_from_df(
 
     return {
         "锁单数": lock_count,
-        "锁单数（order_type =用户车）": user_car_lock_count,
+        "锁单数（order_type =用户车&非总部）": user_car_lock_count,
         "锁单路径盘点": [
             {"留存小订转化": path_intention},
             {"留存大定转化": path_retained_deposit_conv},
@@ -1324,7 +1344,7 @@ def _merge_daily_matrices(base: dict[str, object], inc: dict[str, object]) -> di
                     continue
                 merged_values[metric][col] = values[i]
 
-    removed_metrics = {"订单分析.当日锁单退订数"}
+    removed_metrics = {"订单分析.当日锁单退订数", "订单分析.锁单数（order_type =用户车）"}
     merged_rows = [
         {"metric": m, "values": [merged_values[m].get(c) for c in merged_cols]}
         for m in metric_order
