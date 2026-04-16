@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>竞品车型关键时间点报告</title>
+  <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+  <script charset="utf-8" src="https://cdn.plot.ly/plotly-3.4.0.min.js" integrity="sha256-KEmPoupLpFyGMyGAiOsiNDbKDKAvxXAn/W+oQa0ZAfk=" crossorigin="anonymous"></script>
+  <style>
+    body { font-family: 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; margin: 20px; background: #f4f7f6; color: #333; }
+    h1 { text-align: center; color: #2c3e50; margin-bottom: 8px; }
+    .meta { text-align: center; color: #7f8c8d; margin-bottom: 24px; font-size: 13px; }
+    .table-container { overflow-x: auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 20px; }
+    .diagram-container { background: #fff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 20px; margin-bottom: 20px; }
+    .diagram-container h2 { margin: 0 0 12px; color: #2c3e50; font-size: 16px; }
+    .timeline-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+    .timeline-controls .group { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .timeline-controls label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: #2c3e50; }
+    .timeline-controls button { border: 1px solid #e0e6ed; background: #fff; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .timeline-controls button:hover { background: #f8f9fa; }
+    #timeline-warnings { color: #7f8c8d; font-size: 12px; margin: 6px 0 14px; }
+    #timeline-warnings details { border: 1px solid #e0e6ed; border-radius: 6px; padding: 8px 10px; margin-top: 8px; background: #fafbfc; }
+    #timeline-warnings summary { cursor: pointer; color: #2c3e50; }
+    #timeline-diagram { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+    th, td { border: 1px solid #e0e6ed; padding: 14px; text-align: left; vertical-align: top; }
+    th { background: #34495e; color: #fff; font-weight: 600; white-space: nowrap; }
+    tr:nth-child(even) { background: #f8f9fa; }
+    tr:hover { background: #f1f4f8; }
+    a { color: #2980b9; text-decoration: none; font-size: 13px; line-height: 1.4; display: inline-block; }
+    a:hover { text-decoration: underline; color: #1abc9c; }
+    .date { font-weight: 700; color: #e74c3c; font-size: 13px; margin-bottom: 6px; display: block; }
+    .item { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
+    .item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+    .empty { color: #bdc3c7; font-style: italic; font-size: 13px; }
+    .model-name { font-weight: 700; color: #2c3e50; font-size: 15px; white-space: nowrap; }
+    .variant { background: #e8f4f8; color: #2c3e50; font-size: 12px; padding: 2px 6px; border-radius: 4px; margin-bottom: 6px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>竞品车型关键时间点报告</h1>
+  <div class="meta">数据生成日期：2026-04-16</div>
+  <div class="diagram-container">
+    <h2>时间轴</h2>
+    <div class="timeline-controls">
+      <div class="group" id="timeline-model-filters"></div>
+      <div class="group">
+        <button type="button" id="timeline-select-all">全选</button>
+        <button type="button" id="timeline-select-none">全不选</button>
+      </div>
+    </div>
+    <div id="timeline-warnings"></div>
+    <div id="timeline-diagram"></div>
+  </div>
+  <div class="table-container">
+    <table>
+      <tr>
+        <th>车型</th>
+<th>静态测评</th><th>预售发布</th><th>动态测评</th><th>预约试驾</th><th>展车到店</th><th>上市发布</th><th>开启交付</th></tr><tr data-model="智己LS8"><td class="model-name">智己LS8</td><td><div class="item"><span class="date">2026-04-15</span><a href="https://chejiahao.autohome.com.cn/info/25220637" target="_blank" rel="noreferrer">30万级家庭旗舰的新选择，智己LS8体验解析！</a></div></td><td><div class="item"><span class="date">2026-03-26</span><a href="https://news.yiche.com/xinchexiaoxi/20260326/20108562358.html" target="_blank" rel="noreferrer">智己LS8正式开启预售 预售权益价25.98万元起</a></div><div class="item"><span class="date">2026-03-18</span><a href="https://news.yiche.com/xinchexiaoxi/20260318/20108381117.html" target="_blank" rel="noreferrer">智己LS8将于3月26日开启预售 首搭智己超级智能体</a></div></td><td><span class="empty">暂无数据</span></td><td><span class="empty">暂无数据</span></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="date">2026-04-16</span><a href="https://auto.zol.com.cn/1165/11658172.html" target="_blank" rel="noreferrer">智己LS8正式上市：27.18万起，旗舰增程+六座灵活布局</a></div></td><td><span class="empty">暂无数据</span></td></tr><tr data-model="问界M6"><td class="model-name">问界M6</td><td><div class="item"><span class="date">2026-04-05</span><a href="https://chejiahao.autohome.com.cn/info/25148006" target="_blank" rel="noreferrer">静态体验全新问界M6，近5米车长+前后备箱，配置...</a></div></td><td><div class="item"><span class="date">2026-03-23</span><a href="https://news.yiche.com/xinchexiaoxi/20260323/15108505798.html" target="_blank" rel="noreferrer">问界M6开启预售 预售价26.98万元起</a></div></td><td><span class="empty">暂无数据</span></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="date">2026-04-04</span><a href="https://news.yiche.com/xinchexiaoxi/20260404/12108833400.html" target="_blank" rel="noreferrer">问界M6展车到店 预售价26.98万元起</a></div></td><td><div class="item"><span class="date">2026-04-22</span><a href="https://www.autohome.com.cn/news/202604/1313603.html" target="_blank" rel="noreferrer">问界M6将于4月22日上市 增程+纯电 预售26.98万起 896线激光雷达</a></div></td><td><span class="empty">暂无数据</span></td></tr><tr data-model="问界M7"><td class="model-name">问界M7</td><td><div class="item"><span class="date">2024-03-15</span><a href="https://chejiahao.autohome.com.cn/info/14843258" target="_blank" rel="noreferrer">问界M7深度体验：科技与豪华的完美结晶</a></div></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="variant">问界新M7 Ultra</span><span class="date">2024-05-31</span><a href="https://www.xchuxing.com/article/124252" target="_blank" rel="noreferrer">到底「新」在哪？ 动态试驾问界新 M7 Ultra</a></div></td><td><span class="empty">暂无数据</span></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="variant">问界 新M7 系列</span><span class="date">2023-09-12</span><a href="https://aito.auto/news/m7-new-launch-20230912/" target="_blank" rel="noreferrer">享六座、大五座全新升级，AITO 问界 新M7 系列 24.98 万元起售，发布即交付</a></div><div class="item"><span class="variant">问界 新M7 Ultra</span><span class="date">2024-05-31</span><a href="https://chejiahao.autohome.com.cn/info/15359540" target="_blank" rel="noreferrer">全面升级 还是爆款 问界 新M7 Ultra正式上市</a></div></td><td><div class="item"><span class="variant">问界 新M7 系列</span><span class="date">2023-09-12</span><a href="https://aito.auto/news/m7-new-launch-20230912/" target="_blank" rel="noreferrer">享六座、大五座全新升级，AITO 问界 新M7 系列 24.98 万元起售，发布即交付</a></div></td></tr><tr data-model="问界M8"><td class="model-name">问界M8</td><td><div class="item"><span class="date">2025-04-12</span><a href="https://auto.sina.cn/review/2025-04-12/detail-ineswmez7540449.d.html" target="_blank" rel="noreferrer">再造一个家用旗舰 静态体验问界M8</a></div><div class="item"><span class="date">2025-04-18</span><a href="https://chejiahao.autohome.com.cn/info/19957842" target="_blank" rel="noreferrer">静态体验问界M8大五座版：外观黑曜运动套件更年轻，空间大到惊人</a></div></td><td><div class="item"><span class="date">2025-03-06</span><a href="https://auto.ifeng.com/c/8hUrb5PM1tW" target="_blank" rel="noreferrer">问界M8预售价36.8万元起/4月上市 25款问界M9预售价47.8万元起</a></div><div class="item"><span class="date">2025-03-06</span><a href="https://news.yiche.com/xinchexiaoxi/20250306/0998662247.html" target="_blank" rel="noreferrer">问界M8开启预订 预售价36.8万元起/4月正式上市</a></div></td><td><div class="item"><span class="date">2025-04-29</span><a href="https://auto.sina.cn/review/2025-04-29/detail-ineuvakc5236065.d.html?vt=4" target="_blank" rel="noreferrer">深度试驾问界M8：解锁全场景豪华智能出行新体验</a></div></td><td><div class="item"><span class="date">2025-04-20</span><a href="https://www.pcauto.com.cn/hq/342475.html" target="_blank" rel="noreferrer">鸿蒙智行问界M8预约试驾，线上+线下操作指南</a></div></td><td><div class="item"><span class="date">2025-04-03</span><a href="https://finance.eastmoney.com/a/202504033364569815.html" target="_blank" rel="noreferrer">鸿蒙智行：问界M8首批展车到店 将于本月上市</a></div></td><td><div class="item"><span class="date">2025-04-16</span><a href="https://www.xhby.net/content/s67ffa156e4b0f0f0e9ac1f09.html" target="_blank" rel="noreferrer">35.98万起！造家庭智慧出行标杆，家庭智慧旗舰SUV问界M8上市</a></div><div class="item"><span class="date">2025-04-16</span><a href="https://news.yiche.com/xinchexiaoxi/20250416/1599784438.html" target="_blank" rel="noreferrer">问界M8正式上市 售价35.98万元起</a></div></td><td><div class="item"><span class="date">2025-04-20</span><a href="https://m.bjnews.com.cn/detail/1745154822168850.html" target="_blank" rel="noreferrer">问界M8开启全国交付，问界四款车累计销量超60万辆</a></div><div class="item"><span class="date">2025-04-20</span><a href="https://news.yiche.com/xinchexiaoxi/20250420/1199894338.html" target="_blank" rel="noreferrer">问界M8开启首批交付 售价35.98万元起</a></div></td></tr><tr data-model="ID.ERA 9X"><td class="model-name">ID.ERA 9X</td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="date">2026-03-30</span><a href="https://www.ithome.com/0/934/224.htm" target="_blank" rel="noreferrer">上汽大众 ID. ERA 9X 预售：EA211“黄金增程”加持，32.98 万-37.98 万元</a></div><div class="item"><span class="date">2026-03-30</span><a href="https://news.yiche.com/xinchexiaoxi/20260330/20108693214.html" target="_blank" rel="noreferrer">上汽大众ID. ERA 9X开启预售 预售价32.98万元起</a></div></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="date">2026-03-31</span><a href="https://www.nbd.com.cn/articles/2026-03-31/4318375.html" target="_blank" rel="noreferrer">预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户</a></div></td><td><div class="item"><span class="date">2026-03-31</span><a href="https://www.nbd.com.cn/articles/2026-03-31/4318375.html" target="_blank" rel="noreferrer">预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户（展车与试驾车已到店）</a></div><div class="item"><span class="date">2026-04-08</span><a href="https://chejiahao.autohome.com.cn/info/25171593" target="_blank" rel="noreferrer">大众ID.ERA 9X到店实拍，内饰9块屏，搭1.5T增程器+双电机四驱</a></div></td><td><div class="item"><span class="date">2026-04-25</span><a href="https://www.ithome.com/0/937/368.htm" target="_blank" rel="noreferrer">上汽大众 ID. ERA 9X 将于 4 月 25 日上市</a></div></td><td><div class="item"><span class="date">2026-04-25</span><a href="https://www.nbd.com.cn/articles/2026-03-31/4318375.html" target="_blank" rel="noreferrer">预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户（4月25日交付）</a></div></td></tr><tr data-model="零跑D19"><td class="model-name">零跑D19</td><td><div class="item"><span class="date">2025-12-22</span><a href="https://news.yiche.com/xinchexiaoxi/20251222/16106142166.html" target="_blank" rel="noreferrer">零跑D19内饰官图 现已开启盲订/明年上半年上市</a></div></td><td><div class="item"><span class="date">2025-09-19</span><a href="https://news.yiche.com/xinchexiaoxi/20250919/10103736309.html" target="_blank" rel="noreferrer">零跑D19将于10月16日全球首秀 定位全尺寸SUV/采用增程动力</a></div><div class="item"><span class="date">2025-10-28</span><a href="https://news.yiche.com/xinchexiaoxi/20251028/11104707616.html" target="_blank" rel="noreferrer">零跑D19液态银车色官图 预计2026年一季度上市</a></div><div class="item"><span class="date">2025-11-01</span><a href="https://auto.ifeng.com/c/8nwCI85yW1M" target="_blank" rel="noreferrer">零跑D19开启盲订 2026年上半年上市交付</a></div><div class="item"><span class="date">2025-11-01</span><a href="https://news.yiche.com/xinchexiaoxi/20251101/14104811348.html" target="_blank" rel="noreferrer">零跑D19开启盲订 2026年上半年上市交付</a></div><div class="item"><span class="date">2025-12-28</span><a href="https://www.ithome.com/0/908/678.htm" target="_blank" rel="noreferrer">零跑D19豪华旗舰SUV确认2026年4月正式上市交付：6座/7座可选，双8797芯片</a></div></td><td><div class="item"><span class="date">2026-04-13</span><a href="https://chejiahao.autohome.com.cn/info/25208105" target="_blank" rel="noreferrer">全网首测零跑D19增程版，80度大电池的纯电续航是夯是拉？</a></div></td><td><span class="empty">暂无数据</span></td><td><div class="item"><span class="date">2026-03-11</span><a href="https://chejiahao.autohome.com.cn/info/24952955" target="_blank" rel="noreferrer">零跑D19到店实拍，长超5米2+三电机734马力，配双腔空悬+圆规掉头</a></div></td><td><div class="item"><span class="date">2026-04-16</span><a href="https://news.yiche.com/hao/wenzhang/109084916/" target="_blank" rel="noreferrer">零跑D19将于4月16日迎来全球上市</a></div></td><td><span class="empty">暂无数据</span></td></tr>      </tr>
+    </table>
+  </div>
+  <script>
+    const timelineModels = {"智己LS8": {"static_review": [{"date": "2026-04-15", "title": "30万级家庭旗舰的新选择，智己LS8体验解析！", "url": "https://chejiahao.autohome.com.cn/info/25220637"}], "dynamic_review": [], "presale_release": [{"date": "2026-03-26", "title": "智己LS8正式开启预售 预售权益价25.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20260326/20108562358.html"}, {"date": "2026-03-18", "title": "智己LS8将于3月26日开启预售 首搭智己超级智能体", "url": "https://news.yiche.com/xinchexiaoxi/20260318/20108381117.html"}], "test_drive_reservation": [], "delivery_start": [], "launch_release": [{"date": "2026-04-16", "title": "智己LS8正式上市：27.18万起，旗舰增程+六座灵活布局", "url": "https://auto.zol.com.cn/1165/11658172.html"}], "demo_car_arrival": []}, "问界M6": {"static_review": [{"date": "2026-04-05", "title": "静态体验全新问界M6，近5米车长+前后备箱，配置...", "url": "https://chejiahao.autohome.com.cn/info/25148006"}], "dynamic_review": [], "presale_release": [{"date": "2026-03-23", "title": "问界M6开启预售 预售价26.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20260323/15108505798.html"}], "test_drive_reservation": [], "delivery_start": [], "launch_release": [{"date": "2026-04-22", "title": "问界M6将于4月22日上市 增程+纯电 预售26.98万起 896线激光雷达", "url": "https://www.autohome.com.cn/news/202604/1313603.html"}], "demo_car_arrival": [{"date": "2026-04-04", "title": "问界M6展车到店 预售价26.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20260404/12108833400.html"}]}, "问界M7": {"static_review": [{"date": "2024-03-15", "title": "问界M7深度体验：科技与豪华的完美结晶", "url": "https://chejiahao.autohome.com.cn/info/14843258"}], "dynamic_review": [{"date": "2024-05-31", "title": "到底「新」在哪？ 动态试驾问界新 M7 Ultra", "url": "https://www.xchuxing.com/article/124252", "variant": "问界新M7 Ultra"}], "presale_release": [], "test_drive_reservation": [], "delivery_start": [{"date": "2023-09-12", "title": "享六座、大五座全新升级，AITO 问界 新M7 系列 24.98 万元起售，发布即交付", "url": "https://aito.auto/news/m7-new-launch-20230912/", "variant": "问界 新M7 系列"}], "launch_release": [{"date": "2023-09-12", "title": "享六座、大五座全新升级，AITO 问界 新M7 系列 24.98 万元起售，发布即交付", "url": "https://aito.auto/news/m7-new-launch-20230912/", "variant": "问界 新M7 系列"}, {"date": "2024-05-31", "title": "全面升级 还是爆款 问界 新M7 Ultra正式上市", "url": "https://chejiahao.autohome.com.cn/info/15359540", "variant": "问界 新M7 Ultra"}], "demo_car_arrival": []}, "问界M8": {"static_review": [{"date": "2025-04-12", "title": "再造一个家用旗舰 静态体验问界M8", "url": "https://auto.sina.cn/review/2025-04-12/detail-ineswmez7540449.d.html"}, {"date": "2025-04-18", "title": "静态体验问界M8大五座版：外观黑曜运动套件更年轻，空间大到惊人", "url": "https://chejiahao.autohome.com.cn/info/19957842"}], "dynamic_review": [{"date": "2025-04-29", "title": "深度试驾问界M8：解锁全场景豪华智能出行新体验", "url": "https://auto.sina.cn/review/2025-04-29/detail-ineuvakc5236065.d.html?vt=4"}], "presale_release": [{"date": "2025-03-06", "title": "问界M8预售价36.8万元起/4月上市 25款问界M9预售价47.8万元起", "url": "https://auto.ifeng.com/c/8hUrb5PM1tW"}, {"date": "2025-03-06", "title": "问界M8开启预订 预售价36.8万元起/4月正式上市", "url": "https://news.yiche.com/xinchexiaoxi/20250306/0998662247.html"}], "test_drive_reservation": [{"date": "2025-04-20", "title": "鸿蒙智行问界M8预约试驾，线上+线下操作指南", "url": "https://www.pcauto.com.cn/hq/342475.html"}], "delivery_start": [{"date": "2025-04-20", "title": "问界M8开启全国交付，问界四款车累计销量超60万辆", "url": "https://m.bjnews.com.cn/detail/1745154822168850.html"}, {"date": "2025-04-20", "title": "问界M8开启首批交付 售价35.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20250420/1199894338.html"}], "launch_release": [{"date": "2025-04-16", "title": "35.98万起！造家庭智慧出行标杆，家庭智慧旗舰SUV问界M8上市", "url": "https://www.xhby.net/content/s67ffa156e4b0f0f0e9ac1f09.html"}, {"date": "2025-04-16", "title": "问界M8正式上市 售价35.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20250416/1599784438.html"}], "demo_car_arrival": [{"date": "2025-04-03", "title": "鸿蒙智行：问界M8首批展车到店 将于本月上市", "url": "https://finance.eastmoney.com/a/202504033364569815.html"}]}, "ID.ERA 9X": {"static_review": [], "dynamic_review": [], "presale_release": [{"date": "2026-03-30", "title": "上汽大众 ID. ERA 9X 预售：EA211“黄金增程”加持，32.98 万-37.98 万元", "url": "https://www.ithome.com/0/934/224.htm"}, {"date": "2026-03-30", "title": "上汽大众ID. ERA 9X开启预售 预售价32.98万元起", "url": "https://news.yiche.com/xinchexiaoxi/20260330/20108693214.html"}], "test_drive_reservation": [{"date": "2026-03-31", "title": "预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户", "url": "https://www.nbd.com.cn/articles/2026-03-31/4318375.html"}], "delivery_start": [{"date": "2026-04-25", "title": "预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户（4月25日交付）", "url": "https://www.nbd.com.cn/articles/2026-03-31/4318375.html"}], "launch_release": [{"date": "2026-04-25", "title": "上汽大众 ID. ERA 9X 将于 4 月 25 日上市", "url": "https://www.ithome.com/0/937/368.htm"}], "demo_car_arrival": [{"date": "2026-03-31", "title": "预售价32.98万元起 ID.ERA 9X终端开启试驾 上汽大众傅强：要和新势力抢用户（展车与试驾车已到店）", "url": "https://www.nbd.com.cn/articles/2026-03-31/4318375.html"}, {"date": "2026-04-08", "title": "大众ID.ERA 9X到店实拍，内饰9块屏，搭1.5T增程器+双电机四驱", "url": "https://chejiahao.autohome.com.cn/info/25171593"}]}, "零跑D19": {"static_review": [{"date": "2025-12-22", "title": "零跑D19内饰官图 现已开启盲订/明年上半年上市", "url": "https://news.yiche.com/xinchexiaoxi/20251222/16106142166.html"}], "dynamic_review": [{"date": "2026-04-13", "title": "全网首测零跑D19增程版，80度大电池的纯电续航是夯是拉？", "url": "https://chejiahao.autohome.com.cn/info/25208105"}], "presale_release": [{"date": "2025-09-19", "title": "零跑D19将于10月16日全球首秀 定位全尺寸SUV/采用增程动力", "url": "https://news.yiche.com/xinchexiaoxi/20250919/10103736309.html"}, {"date": "2025-10-28", "title": "零跑D19液态银车色官图 预计2026年一季度上市", "url": "https://news.yiche.com/xinchexiaoxi/20251028/11104707616.html"}, {"date": "2025-11-01", "title": "零跑D19开启盲订 2026年上半年上市交付", "url": "https://auto.ifeng.com/c/8nwCI85yW1M"}, {"date": "2025-11-01", "title": "零跑D19开启盲订 2026年上半年上市交付", "url": "https://news.yiche.com/xinchexiaoxi/20251101/14104811348.html"}, {"date": "2025-12-28", "title": "零跑D19豪华旗舰SUV确认2026年4月正式上市交付：6座/7座可选，双8797芯片", "url": "https://www.ithome.com/0/908/678.htm"}], "test_drive_reservation": [], "delivery_start": [], "launch_release": [{"date": "2026-04-16", "title": "零跑D19将于4月16日迎来全球上市", "url": "https://news.yiche.com/hao/wenzhang/109084916/"}], "demo_car_arrival": [{"date": "2026-03-11", "title": "零跑D19到店实拍，长超5米2+三电机734马力，配双腔空悬+圆规掉头", "url": "https://chejiahao.autohome.com.cn/info/24952955"}]}};
+    const timelineEventTypes = ["static_review", "presale_release", "dynamic_review", "test_drive_reservation", "demo_car_arrival", "launch_release", "delivery_start"];
+    const timelineEventTypeMap = {"static_review": "静态测评", "dynamic_review": "动态测评", "presale_release": "预售发布", "test_drive_reservation": "预约试驾", "delivery_start": "开启交付", "launch_release": "上市发布", "demo_car_arrival": "展车到店"};
+
+    const timelineColors = {
+      static_review: "#8ecae6",
+      presale_release: "#ffb703",
+      dynamic_review: "#219ebc",
+      test_drive_reservation: "#90be6d",
+      demo_car_arrival: "#bde0fe",
+      launch_release: "#fb8500",
+      delivery_start: "#ef476f",
+    };
+
+    function buildFilters() {
+      const box = document.getElementById("timeline-model-filters");
+      box.innerHTML = "";
+      const models = Object.keys(timelineModels);
+      for (const m of models) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = m;
+        input.checked = true;
+        input.addEventListener("change", () => {
+          updateTableVisibility();
+          renderTimeline();
+        });
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(m));
+        box.appendChild(label);
+      }
+
+      document.getElementById("timeline-select-all").addEventListener("click", () => {
+        for (const el of box.querySelectorAll("input[type=checkbox]")) el.checked = true;
+        updateTableVisibility();
+        renderTimeline();
+      });
+
+      document.getElementById("timeline-select-none").addEventListener("click", () => {
+        for (const el of box.querySelectorAll("input[type=checkbox]")) el.checked = false;
+        updateTableVisibility();
+        renderTimeline();
+      });
+    }
+
+    function selectedModels() {
+      const box = document.getElementById("timeline-model-filters");
+      return Array.from(box.querySelectorAll("input[type=checkbox]"))
+        .filter((el) => el.checked)
+        .map((el) => el.value);
+    }
+
+    function updateTableVisibility() {
+      const selected = new Set(selectedModels());
+      for (const row of document.querySelectorAll("table tr[data-model]")) {
+        const m = row.getAttribute("data-model");
+        row.style.display = selected.has(m) ? "" : "none";
+      }
+    }
+
+    function sanitizeId(text) {
+      return "T_" + String(text).replace(/[^a-zA-Z0-9_]/g, "_");
+    }
+
+    function truncate(text, maxLen) {
+      const s = String(text || "");
+      if (s.length <= maxLen) return s;
+      return s.slice(0, maxLen - 1) + "…";
+    }
+
+    function pad2(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function parseDateFromString(raw) {
+      const s = String(raw || "");
+      let m = s.match(/(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/);
+      if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+      m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+      if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+      m = s.match(/(\d{4})(\d{2})(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+      return null;
+    }
+
+    function collectPoints(modelsToShow) {
+      const byEventType = {};
+      for (const et of timelineEventTypes) {
+        byEventType[et] = { x: [], y: [], text: [], url: [] };
+      }
+      const skipped = [];
+
+      for (const model of modelsToShow) {
+        const modelEvents = timelineModels[model] || {};
+        for (const et of timelineEventTypes) {
+          const items = modelEvents[et] || [];
+          for (const it of items) {
+            const date = parseDateFromString(it.date) || parseDateFromString(it.title) || parseDateFromString(it.url);
+            if (!date) {
+              skipped.push({ model, et, title: it.title || "", url: it.url || "" });
+              continue;
+            }
+            const title = it.title || "";
+            const etName = timelineEventTypeMap[et] || et;
+            byEventType[et].x.push(date);
+            byEventType[et].y.push(model);
+            byEventType[et].text.push(`${etName} | ${truncate(title, 80)}`);
+            byEventType[et].url.push(it.url || "");
+          }
+        }
+      }
+
+      return { byEventType, skipped };
+    }
+
+    function renderTimeline() {
+      const container = document.getElementById("timeline-diagram");
+      const warnings = document.getElementById("timeline-warnings");
+      const modelsToShow = selectedModels();
+      const { byEventType, skipped } = collectPoints(modelsToShow);
+
+      const traces = [];
+      for (const et of timelineEventTypes) {
+        const name = timelineEventTypeMap[et] || et;
+        const color = timelineColors[et] || "#cccccc";
+        const p = byEventType[et];
+        traces.push({
+          type: "scatter",
+          mode: "markers",
+          name,
+          x: p.x,
+          y: p.y,
+          text: p.text,
+          customdata: p.url,
+          marker: { color, size: 10, line: { color: "#333", width: 1 } },
+          hovertemplate: "%{y}<br>%{x}<br>%{text}<extra></extra>",
+        });
+      }
+
+      const height = Math.max(320, 80 + modelsToShow.length * 40);
+      const layout = {
+        height,
+        margin: { l: 140, r: 40, t: 20, b: 60 },
+        xaxis: { type: "date", tickformat: "%Y-%m-%d", showgrid: true, gridcolor: "#ebedf0" },
+        yaxis: { type: "category", categoryorder: "array", categoryarray: modelsToShow, automargin: true },
+        legend: { orientation: "h" },
+      };
+
+      if (!skipped.length) {
+        warnings.innerHTML = "日期解析：全部可用";
+      } else {
+        const head = `日期解析：跳过 ${skipped.length} 条（缺少可解析日期，未绘制）`;
+        const lines = skipped.slice(0, 30).map((it) => {
+          const etName = timelineEventTypeMap[it.et] || it.et;
+          const title = truncate(it.title || "详情", 70);
+          return `${it.model} | ${etName} | ${title} | ${it.url || ""}`;
+        });
+        const more = skipped.length > 30 ? `\n... 还有 ${skipped.length - 30} 条` : "";
+        warnings.innerHTML = `${head}<details><summary>查看详情</summary><pre style="white-space:pre-wrap;margin:8px 0 0;">${lines.join("\n")}${more}</pre></details>`;
+      }
+
+      Plotly.react(container, traces, layout, { responsive: true, displaylogo: false });
+
+      container.on("plotly_click", (ev) => {
+        const pt = ev && ev.points && ev.points[0];
+        const url = pt && pt.customdata;
+        if (url) window.open(url, "_blank");
+      });
+    }
+
+    buildFilters();
+    updateTableVisibility();
+    renderTimeline();
+  </script>
+</body>
+</html>
