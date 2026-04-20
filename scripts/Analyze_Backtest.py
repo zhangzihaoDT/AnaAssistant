@@ -14,7 +14,7 @@ DATA_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/index_s
 BUSINESS_DEFINITION_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/business_definition.json")
 DATA_PATH_MD_FILE = Path("/Users/zihao_/Documents/github/26W06_Tool_calls/schema/data_path.md")
 SCRIPT_DIR = Path(__file__).parent
-DEFAULT_OUTPUT = SCRIPT_DIR / "reports/analyze_xx.html"
+DEFAULT_OUTPUT = SCRIPT_DIR / "reports/analyze_backtest.html"
 TARGET_LEADS_METRIC = "下发线索转化率.下发线索数"
 TARGET_STORE_DAILY_LEADS_METRIC = "订单分析.店日均下发线索数"
 TARGET_30D_CONV_METRIC = "下发线索转化率.下发线索当30日锁单率"
@@ -992,11 +992,11 @@ def generate_report(
         "<html>",
         "<head>",
         "<meta charset='utf-8'>",
-        "<title>Analyze_XX 可视化报告</title>",
+        "<title>Analyze_Backtest 可视化报告</title>",
         css,
         "</head>",
         "<body>",
-        "<h1>Analyze_XX 可视化报告</h1>",
+        "<h1>Analyze_Backtest 可视化报告</h1>",
         f"<div class='timestamp'>生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>",
         f"<div class='timestamp'>数据范围: {leads_data['date'].min().date()} ~ {leads_data['date'].max().date()}</div>",
     ]

@@ -79,10 +79,20 @@ PLANNING_TOOL_SCHEMA = {
                             "statistics": {
                                 "type": "object",
                                 "properties": {
-                                    "type": {"type": "string", "enum": ["weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank"]},
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "weekly_decline_ratio",
+                                            "daily_threshold_count",
+                                            "daily_mean",
+                                            "daily_percentile_rank",
+                                            "weekend_percentile_rank",
+                                        ],
+                                    },
                                     "time_field": {"type": "string"},
                                     "window_weeks": {"type": "integer"},
                                     "window_days": {"type": "integer"},
+                                    "window_weekends": {"type": "integer"},
                                     "reference_date": {"type": "string"},
                                     "weekdays": {"type": "array", "items": {"type": "integer"}},
                                     "op": {"type": "string", "enum": [">", ">=", "<", "<=", "==", "!="]},
@@ -572,6 +582,18 @@ class PlanningAgent:
             return None
 
     @staticmethod
+    def _parse_recent_weekends(user_query: str) -> int | None:
+        q = user_query or ""
+        m = re.search(r"近\s*(\d{1,3})\s*(?:个)?\s*周末", q)
+        if not m:
+            return None
+        try:
+            v = int(m.group(1))
+            return v if v > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
     def _parse_threshold_condition(user_query: str) -> tuple[str, float] | None:
         q = (user_query or "").replace(" ", "")
         pattern_map = [
@@ -664,6 +686,17 @@ class PlanningAgent:
         return (has_percentile or has_level) and has_ref and has_recent_day
 
     @staticmethod
+    def _is_weekend_percentile_rank_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_level = any(k in q for k in ["处于什么水平", "什么水平", "处于什么位置", "高低水平", "分位", "百分位"])
+        has_weekend = "周末" in q
+        has_recent_weekend = bool(re.search(r"近\s*\d+\s*(?:个)?\s*周末", q))
+        has_ref = any(k in q for k in ["本周末", "这个周末", "上周末", "上一个周末"])
+        return has_level and has_weekend and (has_recent_weekend or has_ref)
+
+    @staticmethod
     def _extract_explicit_time_window(user_query: str, today: datetime.date) -> tuple[str, str] | None:
         q = user_query or ""
         sanitized = re.sub(r"(昨天|昨日|今天|今日|本周|上周|本月|上月|今年|去年|前年)", " ", q)
@@ -752,7 +785,7 @@ class PlanningAgent:
                 "denominator_metric": denominator,
             },
         }
-        return self._normalize_plan(plan)
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
 
     def _build_daily_threshold_count_plan(self, user_query: str) -> dict | None:
         metric_defaults = self._metric_defaults(user_query)
@@ -783,7 +816,7 @@ class PlanningAgent:
                 "value_metric": value_metric,
             },
         }
-        return self._normalize_plan(plan)
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
 
     def _build_daily_mean_plan(self, user_query: str) -> dict | None:
         metric_defaults = self._metric_defaults(user_query)
@@ -816,7 +849,7 @@ class PlanningAgent:
                 "value_metric": value_metric,
             },
         }
-        return self._normalize_plan(plan)
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
 
     def _build_daily_percentile_rank_plan(self, user_query: str) -> dict | None:
         metric_defaults = self._metric_defaults(user_query)
@@ -844,7 +877,36 @@ class PlanningAgent:
                 "value_metric": value_metric,
             },
         }
-        return self._normalize_plan(plan)
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
+
+    def _build_weekend_percentile_rank_plan(self, user_query: str) -> dict | None:
+        metric_defaults = self._metric_defaults(user_query)
+        if not metric_defaults:
+            return None
+        today = datetime.date.today()
+        weekends = self._parse_recent_weekends(user_query) or 10
+        start = today - datetime.timedelta(days=(weekends * 7 + 14))
+        end = today + datetime.timedelta(days=1)
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+        reference_date = today.isoformat()
+        plan = {
+            "dataset": metric_defaults["dataset"],
+            "metric": value_metric,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [{"field": time_field, "op": "!=", "value": None}],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "weekend_percentile_rank",
+                "time_field": time_field,
+                "window_weekends": weekends,
+                "reference_date": reference_date,
+                "value_metric": value_metric,
+            },
+            "question": "周末锁单数在近N个周末中的分位",
+        }
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
 
     @staticmethod
     def _statistics_plan_valid(statistics: dict, plan: dict) -> bool:
@@ -903,6 +965,20 @@ class PlanningAgent:
             return True
 
         if stype == "daily_percentile_rank":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            value_metric = statistics.get("value_metric")
+            reference_date = statistics.get("reference_date")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if not isinstance(value_metric, dict):
+                return False
+            if not value_metric.get("field") or not value_metric.get("agg"):
+                return False
+            if reference_date is not None and not isinstance(reference_date, str):
+                return False
+            return True
+
+        if stype == "weekend_percentile_rank":
             time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
             value_metric = statistics.get("value_metric")
             reference_date = statistics.get("reference_date")
@@ -1031,7 +1107,7 @@ class PlanningAgent:
             plan["statistics"] = {}
         elif isinstance(statistics, dict):
             stype = statistics.get("type")
-            if stype not in {"weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank"}:
+            if stype not in {"weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank", "weekend_percentile_rank"}:
                 plan["statistics"] = {}
             elif stype == "weekly_decline_ratio":
                 wdays = statistics.get("weekdays")
@@ -1066,6 +1142,10 @@ class PlanningAgent:
                 wdays = statistics.get("window_days")
                 if isinstance(wdays, str) and wdays.isdigit():
                     statistics["window_days"] = int(wdays)
+            elif stype == "weekend_percentile_rank":
+                wends = statistics.get("window_weekends")
+                if isinstance(wends, str) and wends.isdigit():
+                    statistics["window_weekends"] = int(wends)
             if not PlanningAgent._statistics_plan_valid(statistics, plan):
                 plan["statistics"] = {}
 
@@ -1131,6 +1211,14 @@ class PlanningAgent:
             q = plan.get("question") or user_query
             normalized = self._fill_defaults(self._normalize_plan(plan), q)
             has_compare = any(k in q for k in ["对比", "相比", "对照", "较"])
+            if self._is_weekend_percentile_rank_query(q):
+                stat = normalized.get("statistics")
+                if not isinstance(stat, dict) or stat.get("type") != "weekend_percentile_rank":
+                    weekend_plan = self._build_weekend_percentile_rank_plan(q)
+                    if isinstance(weekend_plan, dict) and weekend_plan:
+                        weekend_plan["question"] = q
+                        finalized.append(weekend_plan)
+                        continue
             if self._is_daily_mean_query(q):
                 stat = normalized.get("statistics")
                 if has_compare and any(k in q for k in ["昨天", "昨日"]):
@@ -1222,7 +1310,7 @@ class PlanningAgent:
                     "- 用户出现‘试驾车’时 filters 必须含 order_type == 试驾车；出现‘用户车’时必须含 order_type == 用户车。\n"
                     "- 用户出现系列词（L6/L7/LS6/LS7/LS8/LS9）时，filters 应补充 series 约束。\n"
                     "- 同比/年同比用 comparison.type=yoy；周环比用 comparison.type=wow；日环比（如“昨天日环比”）用 comparison.type=dod。\n"
-                    "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank，并补齐各自必需字段。\n"
+                    "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank / weekend_percentile_rank，并补齐各自必需字段。\n"
                 ),
             },
             {"role": "user", "content": user_query},
@@ -1295,6 +1383,11 @@ class PlanningAgent:
                     return [p]
             if intent == "statistics" and self._is_daily_percentile_rank_query(part):
                 p = self._build_daily_percentile_rank_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
+            if intent == "statistics" and self._is_weekend_percentile_rank_query(part):
+                p = self._build_weekend_percentile_rank_plan(part)
                 if isinstance(p, dict) and p:
                     p["question"] = part
                     return [p]
