@@ -76,6 +76,8 @@
   - 活跃门店集合为活动日落在 `[d-29, d]` 的门店。
   - 在营判定为 `open_date <= d`，最终结果为门店 `store_name` 去重计数。
   - 不要把 `store_create_date` 直接当作统计时间字段做简单 count。
+- **下发线索至锁单时间间隔(天)**: `first_assign_lock_time` (平均/中位数)。二级指标，定义为 `(lock_time - first_assign_time)` 换算为天（负值视为无效），用于衡量从首次下发线索到锁单的转化时长，时间筛选通常基于 `lock_time`。
+  - 在 `scripts/index_summary.py` 的 `订单分析` 模块中：按车系输出 `{locks, avg, mid}`，其中 `avg`=均值(天，保留 1 位小数)，`mid`=中位数(天，保留 1 位小数)。
 
 - **购车人年龄**: `buyer_age` (平均/分布)
 - **车主年龄**: `owner_age` (平均/分布)
@@ -146,6 +148,7 @@
 | store_city | str | 门店城市 |
 | license_city | str | 上牌城市 |
 | first_assign_time | datetime64[ns] | 首次下发时间 |
+| first_assign_lock_time | float64 | 下发线索至锁单时间间隔（天，二级指标=lock_time-first_assign_time） |
 | first_touch_time | datetime64[ns] | 首次接触时间 |
 | order_type | str | 订单类型 |
 | buyer_identity_no | str | 购车人身份证号 |

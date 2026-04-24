@@ -126,6 +126,49 @@ def _to_percent_1dp(value: float | None) -> str | None:
     return f"{round(value * 100.0, 1):.1f}%"
 
 
+def _to_interval_days(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_timedelta64_dtype(series):
+        return (series.dt.total_seconds() / 86400.0).astype("Float64")
+    as_num = pd.to_numeric(series, errors="coerce")
+    if as_num.notna().any():
+        return as_num.astype("Float64")
+    td = pd.to_timedelta(series, errors="coerce")
+    if td.notna().any():
+        return (td.dt.total_seconds() / 86400.0).astype("Float64")
+    return pd.Series(pd.NA, index=series.index, dtype="Float64")
+
+
+def _calc_series_assign_lock_stats(product_win: pd.DataFrame) -> dict[str, dict[str, object]]:
+    targets = ["L6", "LS6", "LS8", "LS9"]
+    if product_win.empty:
+        return {k: {"locks": 0, "avg": None, "mid": None} for k in targets}
+    if "series" not in product_win.columns or "order_number" not in product_win.columns:
+        return {k: {"locks": 0, "avg": None, "mid": None} for k in targets}
+
+    df = product_win.copy()
+    df["series"] = df["series"].astype("string").str.strip()
+    has_interval = "first_assign_lock_time" in df.columns
+
+    out: dict[str, dict[str, object]] = {}
+    for s in targets:
+        sub = df[df["series"].eq(s)]
+        lock_cnt = int(sub["order_number"].nunique())
+        mean = None
+        median = None
+        if has_interval:
+            v = _to_interval_days(sub["first_assign_lock_time"]).dropna()
+            if not v.empty:
+                mean = float(v.mean())
+                median = float(v.median())
+        out[s] = {
+            "locks": lock_cnt,
+            "avg": (None if mean is None else round(mean, 1)),
+            "mid": (None if median is None else round(median, 1)),
+        }
+    return out
+
+
+
 def _pick_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     cols_lower = {str(c).lower(): c for c in df.columns}
     for cand in candidates:
@@ -221,12 +264,24 @@ def _calc_order_metrics(
         "store_create_date",
         "order_create_date",
         "invoice_amount",
+        "first_assign_time",
         "intention_payment_time",
         "intention_refund_time",
         "deposit_payment_time",
         "deposit_refund_time",
+        "first_assign_lock_time",
     ]
-    df = pd.read_parquet(order_path, columns=cols)
+    try:
+        df = pd.read_parquet(order_path, columns=cols)
+    except Exception:
+        df = pd.read_parquet(order_path)
+
+    if "first_assign_time" in df.columns:
+        df["first_assign_time"] = pd.to_datetime(df["first_assign_time"], errors="coerce")
+        df["lock_time"] = pd.to_datetime(df["lock_time"], errors="coerce")
+        delta = df["lock_time"] - df["first_assign_time"]
+        days = (delta.dt.total_seconds() / 86400.0).astype("Float64")
+        df["first_assign_lock_time"] = days.where(days.ge(0))
 
     start = target_date.normalize()
     end = start + pd.Timedelta(days=1)
@@ -349,7 +404,10 @@ def _calc_order_metrics(
                 if not amt.empty:
                     atp_wan = float(amt.mean() / 10000.0)
 
-    product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), ["order_number", "series", "product_name"]].copy()
+    product_cols = ["order_number", "series", "product_name"]
+    if "first_assign_lock_time" in df.columns:
+        product_cols.append("first_assign_lock_time")
+    product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), product_cols].copy()
     if not product_win.empty:
         product_win["order_number"] = product_win["order_number"].astype(str)
         product_win = product_win.dropna(subset=["order_number"])
@@ -361,22 +419,15 @@ def _calc_order_metrics(
 
     denom_orders = int(product_win["order_number"].nunique()) if not product_win.empty else 0
 
-    share_l6 = None
-    share_ls6 = None
-    share_ls9 = None
     share_reev = None
     if denom_orders > 0:
-        series = product_win.get("series")
-        if series is not None:
-            share_l6 = _safe_ratio(int(series.eq("L6").sum()), denom_orders)
-            share_ls6 = _safe_ratio(int(series.eq("LS6").sum()), denom_orders)
-            share_ls9 = _safe_ratio(int(series.eq("LS9").sum()), denom_orders)
-
         pn = product_win.get("product_name")
         if pn is not None:
             pn = pn.astype("string").fillna("")
             is_reev = pn.str.contains("52", regex=False) | pn.str.contains("66", regex=False)
             share_reev = _safe_ratio(int(is_reev.sum()), denom_orders)
+
+    series_stats = _calc_series_assign_lock_stats(product_win)
 
     return {
         "锁单数": lock_count,
@@ -396,9 +447,10 @@ def _calc_order_metrics(
         "CR5门店销量集中度": _to_percent_1dp(cr5_store),
         "CR5门店城市销量集中度": _to_percent_1dp(cr5_city),
         "整体ATP(用户车,万元)": (None if atp_wan is None else round(atp_wan, 2)),
-        "share_l6": _to_percent_1dp(share_l6),
-        "share_ls6": _to_percent_1dp(share_ls6),
-        "share_ls9": _to_percent_1dp(share_ls9),
+        "L6": series_stats["L6"],
+        "LS6": series_stats["LS6"],
+        "LS8": series_stats["LS8"],
+        "LS9": series_stats["LS9"],
         "share_reev": _to_percent_1dp(share_reev),
     }
 
@@ -722,12 +774,26 @@ def _load_order_df(order_path: Path) -> pd.DataFrame:
         "store_city",
         "store_create_date",
         "order_create_date",
+        "first_assign_time",
         "intention_payment_time",
         "intention_refund_time",
         "deposit_payment_time",
         "deposit_refund_time",
+        "first_assign_lock_time",
     ]
-    return pd.read_parquet(order_path, columns=cols)
+    try:
+        df = pd.read_parquet(order_path, columns=cols)
+    except Exception:
+        df = pd.read_parquet(order_path)
+
+    if "first_assign_time" in df.columns:
+        df["first_assign_time"] = pd.to_datetime(df["first_assign_time"], errors="coerce")
+        df["lock_time"] = pd.to_datetime(df["lock_time"], errors="coerce")
+        delta = df["lock_time"] - df["first_assign_time"]
+        days = (delta.dt.total_seconds() / 86400.0).astype("Float64")
+        df["first_assign_lock_time"] = days.where(days.ge(0))
+
+    return df
 
 
 def _calc_order_metrics_from_df(
@@ -854,7 +920,10 @@ def _calc_order_metrics_from_df(
                 if not amt.empty:
                     atp_wan = float(amt.mean() / 10000.0)
 
-    product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), ["order_number", "series", "product_name"]].copy()
+    product_cols = ["order_number", "series", "product_name"]
+    if "first_assign_lock_time" in df.columns:
+        product_cols.append("first_assign_lock_time")
+    product_win = df.loc[lock_mask & (df["order_type"] != "试驾车"), product_cols].copy()
     if not product_win.empty:
         product_win["order_number"] = product_win["order_number"].astype(str)
         product_win = product_win.dropna(subset=["order_number"])
@@ -866,22 +935,15 @@ def _calc_order_metrics_from_df(
 
     denom_orders = int(product_win["order_number"].nunique()) if not product_win.empty else 0
 
-    share_l6 = None
-    share_ls6 = None
-    share_ls9 = None
     share_reev = None
     if denom_orders > 0:
-        series = product_win.get("series")
-        if series is not None:
-            share_l6 = _safe_ratio(int(series.eq("L6").sum()), denom_orders)
-            share_ls6 = _safe_ratio(int(series.eq("LS6").sum()), denom_orders)
-            share_ls9 = _safe_ratio(int(series.eq("LS9").sum()), denom_orders)
-
         pn = product_win.get("product_name")
         if pn is not None:
             pn = pn.astype("string").fillna("")
             is_reev = pn.str.contains("52", regex=False) | pn.str.contains("66", regex=False)
             share_reev = _safe_ratio(int(is_reev.sum()), denom_orders)
+
+    series_stats = _calc_series_assign_lock_stats(product_win)
 
     return {
         "锁单数": lock_count,
@@ -901,9 +963,10 @@ def _calc_order_metrics_from_df(
         "CR5门店销量集中度": _to_percent_1dp(cr5_store),
         "CR5门店城市销量集中度": _to_percent_1dp(cr5_city),
         "整体ATP(用户车,万元)": (None if atp_wan is None else round(atp_wan, 2)),
-        "share_l6": _to_percent_1dp(share_l6),
-        "share_ls6": _to_percent_1dp(share_ls6),
-        "share_ls9": _to_percent_1dp(share_ls9),
+        "L6": series_stats["L6"],
+        "LS6": series_stats["LS6"],
+        "LS8": series_stats["LS8"],
+        "LS9": series_stats["LS9"],
         "share_reev": _to_percent_1dp(share_reev),
     }
 
@@ -1344,7 +1407,13 @@ def _merge_daily_matrices(base: dict[str, object], inc: dict[str, object]) -> di
                     continue
                 merged_values[metric][col] = values[i]
 
-    removed_metrics = {"订单分析.当日锁单退订数", "订单分析.锁单数（order_type =用户车）"}
+    removed_metrics = {
+        "订单分析.当日锁单退订数",
+        "订单分析.锁单数（order_type =用户车）",
+        "订单分析.share_l6",
+        "订单分析.share_ls6",
+        "订单分析.share_ls9",
+    }
     merged_rows = [
         {"metric": m, "values": [merged_values[m].get(c) for c in merged_cols]}
         for m in metric_order
