@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Union
 
 import pandas as pd
+import warnings
 
 
 def _safe_read_csv(file_path: Path) -> pd.DataFrame:
@@ -40,11 +41,31 @@ def _try_parse_datetime_series(series: pd.Series) -> pd.Series | None:
         return s
 
     raw = s.astype(str)
+    raw_stripped = raw.str.strip()
     parsed_cn = pd.to_datetime(raw, errors="coerce", format="%Y年%m月%d日")
     if float(parsed_cn.notna().mean()) >= 0.8:
         return parsed_cn
 
-    parsed_any = pd.to_datetime(raw, errors="coerce")
+    iso_date_ratio = float(raw_stripped.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False).mean())
+    if iso_date_ratio >= 0.8:
+        parsed_iso_date = pd.to_datetime(raw_stripped, errors="coerce", format="%Y-%m-%d")
+        if float(parsed_iso_date.notna().mean()) >= 0.8:
+            return parsed_iso_date
+
+    iso_dt_raw = raw_stripped.str.replace("T", " ", regex=False)
+    iso_dt_ratio = float(
+        iso_dt_raw.str.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(\.\d+)?$", na=False).mean()
+    )
+    if iso_dt_ratio >= 0.8:
+        parsed_iso_dt_base = pd.to_datetime(iso_dt_raw, errors="coerce", format="%Y-%m-%d %H:%M:%S")
+        parsed_iso_dt_frac = pd.to_datetime(iso_dt_raw, errors="coerce", format="%Y-%m-%d %H:%M:%S.%f")
+        parsed_iso_dt = parsed_iso_dt_base.fillna(parsed_iso_dt_frac)
+        if float(parsed_iso_dt.notna().mean()) >= 0.8:
+            return parsed_iso_dt
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        parsed_any = pd.to_datetime(raw_stripped, errors="coerce")
     if float(parsed_any.notna().mean()) >= 0.8:
         return parsed_any
 

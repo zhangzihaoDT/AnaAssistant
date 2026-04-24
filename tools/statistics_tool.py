@@ -191,6 +191,20 @@ class StatisticsTool:
         if grouped.empty:
             return "统计分析在窗口内无可用日期数据。"
 
+        grouped["value"] = grouped[metric_alias].astype(float)
+        date_start_raw = request.get("date_start")
+        date_end_raw = request.get("date_end")
+        date_start = pd.to_datetime(date_start_raw, errors="coerce") if isinstance(date_start_raw, str) else pd.NaT
+        date_end = pd.to_datetime(date_end_raw, errors="coerce") if isinstance(date_end_raw, str) else pd.NaT
+        if pd.notna(date_start) and pd.notna(date_end) and pd.Timestamp(date_end) > pd.Timestamp(date_start):
+            start = pd.Timestamp(date_start).normalize()
+            end = pd.Timestamp(date_end).normalize()
+        else:
+            end = pd.Timestamp(grouped["date"].max()).normalize() + pd.Timedelta(days=1)
+            start = end - pd.Timedelta(days=int(window_days))
+        date_index = pd.date_range(start=start, end=end - pd.Timedelta(days=1), freq="D")
+        series = grouped.set_index("date")["value"].reindex(date_index, fill_value=0.0)
+
         def _match(v: float) -> bool:
             if op == ">":
                 return v > threshold
@@ -204,20 +218,18 @@ class StatisticsTool:
                 return v == threshold
             return v != threshold
 
-        grouped["value"] = grouped[metric_alias].astype(float)
-        grouped["matched"] = grouped["value"].apply(_match)
-
-        matched_days = int(grouped["matched"].sum())
-        total_days = int(len(grouped))
+        matched = series.apply(_match)
+        matched_days = int(matched.sum())
+        total_days = int(len(series))
         matched_ratio = 0.0 if total_days == 0 else (matched_days / total_days)
 
         daily_rows: list[dict] = []
-        for _, row in grouped.iterrows():
+        for date, value in series.items():
             daily_rows.append(
                 {
-                    "date": row["date"].strftime("%Y-%m-%d"),
-                    "value": float(row["value"]),
-                    "matched": bool(row["matched"]),
+                    "date": pd.Timestamp(date).strftime("%Y-%m-%d"),
+                    "value": float(value),
+                    "matched": bool(_match(float(value))),
                 }
             )
 
@@ -278,14 +290,26 @@ class StatisticsTool:
             return "统计分析在窗口内无可用日期数据。"
 
         grouped["value"] = grouped[metric_alias].astype(float)
-        total_days = int(len(grouped))
-        daily_mean = float(grouped["value"].mean())
+        date_start_raw = request.get("date_start")
+        date_end_raw = request.get("date_end")
+        date_start = pd.to_datetime(date_start_raw, errors="coerce") if isinstance(date_start_raw, str) else pd.NaT
+        date_end = pd.to_datetime(date_end_raw, errors="coerce") if isinstance(date_end_raw, str) else pd.NaT
+        if pd.notna(date_start) and pd.notna(date_end) and pd.Timestamp(date_end) > pd.Timestamp(date_start):
+            start = pd.Timestamp(date_start).normalize()
+            end = pd.Timestamp(date_end).normalize()
+        else:
+            end = pd.Timestamp(grouped["date"].max()).normalize() + pd.Timedelta(days=1)
+            start = end - pd.Timedelta(days=int(window_days))
+        date_index = pd.date_range(start=start, end=end - pd.Timedelta(days=1), freq="D")
+        series = grouped.set_index("date")["value"].reindex(date_index, fill_value=0.0)
+        total_days = int(len(series))
+        daily_mean = float(series.mean()) if total_days else 0.0
         daily_rows: list[dict] = []
-        for _, row in grouped.iterrows():
+        for date, value in series.items():
             daily_rows.append(
                 {
-                    "date": row["date"].strftime("%Y-%m-%d"),
-                    "value": float(row["value"]),
+                    "date": pd.Timestamp(date).strftime("%Y-%m-%d"),
+                    "value": float(value),
                 }
             )
 
@@ -343,30 +367,38 @@ class StatisticsTool:
             return "统计分析在窗口内无可用日期数据。"
 
         grouped["value"] = grouped[metric_alias].astype(float)
-        total_days = int(len(grouped))
+        date_start_raw = request.get("date_start")
+        date_end_raw = request.get("date_end")
+        date_start = pd.to_datetime(date_start_raw, errors="coerce") if isinstance(date_start_raw, str) else pd.NaT
+        date_end = pd.to_datetime(date_end_raw, errors="coerce") if isinstance(date_end_raw, str) else pd.NaT
+        if pd.notna(date_start) and pd.notna(date_end) and pd.Timestamp(date_end) > pd.Timestamp(date_start):
+            start = pd.Timestamp(date_start).normalize()
+            end = pd.Timestamp(date_end).normalize()
+        else:
+            end = pd.Timestamp(grouped["date"].max()).normalize() + pd.Timedelta(days=1)
+            start = end - pd.Timedelta(days=int(window_days))
+        date_index = pd.date_range(start=start, end=end - pd.Timedelta(days=1), freq="D")
+        series = grouped.set_index("date")["value"].reindex(date_index, fill_value=0.0)
+        total_days = int(len(series))
         ref_raw = request.get("reference_date")
         reference_date = pd.to_datetime(ref_raw, errors="coerce") if isinstance(ref_raw, str) else pd.NaT
         if pd.isna(reference_date):
-            reference_date = grouped["date"].max()
+            reference_date = date_index.max()
         reference_date = pd.Timestamp(reference_date).normalize()
-        ref_rows = grouped[grouped["date"] == reference_date]
-        if ref_rows.empty:
-            ref_row = grouped.tail(1).iloc[0]
-            reference_date = pd.Timestamp(ref_row["date"]).normalize()
-            reference_value = float(ref_row["value"])
-        else:
-            reference_value = float(ref_rows.iloc[0]["value"])
+        if reference_date not in set(pd.Timestamp(d).normalize() for d in date_index):
+            reference_date = date_index.max()
+        reference_value = float(series.get(reference_date, 0.0))
 
-        less_count = int((grouped["value"] < reference_value).sum())
-        le_count = int((grouped["value"] <= reference_value).sum())
+        less_count = int((series < reference_value).sum())
+        le_count = int((series <= reference_value).sum())
         percentile_rank = 0.0 if total_days == 0 else (le_count / total_days)
 
         daily_rows: list[dict] = []
-        for _, row in grouped.iterrows():
+        for date, value in series.items():
             daily_rows.append(
                 {
-                    "date": row["date"].strftime("%Y-%m-%d"),
-                    "value": float(row["value"]),
+                    "date": pd.Timestamp(date).strftime("%Y-%m-%d"),
+                    "value": float(value),
                 }
             )
 
@@ -498,6 +530,8 @@ STATISTICS_TOOL_SCHEMA = {
                 "window_weeks": {"type": "integer"},
                 "window_days": {"type": "integer"},
                 "window_weekends": {"type": "integer"},
+                "date_start": {"type": "string"},
+                "date_end": {"type": "string"},
                 "reference_date": {"type": "string"},
                 "weekdays": {"type": "array", "items": {"type": "integer"}},
                 "op": {"type": "string", "enum": [">", ">=", "<", "<=", "==", "!="]},

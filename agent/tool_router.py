@@ -206,6 +206,8 @@ def _execute_single_plan(
                     "type": "daily_threshold_count",
                     "time_field": stat_time_field,
                     "window_days": statistics.get("window_days") or 30,
+                    "date_start": time_start,
+                    "date_end": time_end,
                     "op": statistics.get("op") or ">",
                     "threshold": statistics.get("threshold") if isinstance(statistics, dict) else 0,
                     "metric_alias": stat_metric_alias,
@@ -250,6 +252,8 @@ def _execute_single_plan(
                         "type": "daily_threshold_count",
                         "time_field": statistics.get("time_field") or time_field,
                         "window_days": statistics.get("window_days") or 30,
+                        "date_start": time_start,
+                        "date_end": time_end,
                         "op": statistics.get("op") or ">",
                         "threshold": statistics.get("threshold") if isinstance(statistics, dict) else 0,
                         "metric_alias": metric_alias,
@@ -305,6 +309,8 @@ def _execute_single_plan(
                         "type": "daily_mean",
                         "time_field": statistics.get("time_field") or time_field,
                         "window_days": statistics.get("window_days") or 30,
+                        "date_start": time_start,
+                        "date_end": time_end,
                         "metric_alias": metric_alias,
                     }
                     try:
@@ -358,6 +364,8 @@ def _execute_single_plan(
                         "type": "daily_percentile_rank",
                         "time_field": statistics.get("time_field") or time_field,
                         "window_days": statistics.get("window_days") or 30,
+                        "date_start": time_start,
+                        "date_end": time_end,
                         "reference_date": statistics.get("reference_date"),
                         "metric_alias": metric_alias,
                     }

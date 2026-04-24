@@ -204,6 +204,14 @@ AnalysisAgent 生成最终自然语言回答
   - 默认单 plan；仅当用户明确包含多个子问题时拆分
   - 对“日均/分位”等语义执行后处理修正（`_finalize_plans`），避免退化为累计查询
   - LLM 异常或输出不可用时，回退到规则规划分支
+- **时间窗口口径**：
+  - 统一采用左闭右开：`[start, end)`，其中 `end` 为开区间边界
+  - 执行层统一使用 `>= start` 与 `< end` 进行过滤
+- **时间窗口校验与重写（Plan Validator）**：
+  - 规则解析：`_parse_time_window(user_query, today)` 提取确定性时间窗口（若能解析）
+  - 类型白名单：仅对明确时间类型启用校验/重写（如 yesterday / month_to_today / last_month / date_range 等）
+  - 校验失败：当 `plan.time` 与 `rule_window` 不一致时，触发一次轻量重写，仅允许模型返回 `time.start/time.end`
+  - 确定性兜底：模型输出若不合法或不等于 `rule_window`，回退使用 `rule_window`
 - **统计类型细分**：
   - `weekly_decline_ratio` 仅用于单窗口内周环比序列统计与下降占比统计
   - `daily_threshold_count` 用于近 N 日阈值计数问题
@@ -223,6 +231,8 @@ AnalysisAgent 生成最终自然语言回答
 - **agent/tool_router.py 执行兜底**：
   - 执行 statistics 前校验输入 DataFrame 所需列
   - 列缺失或执行异常时返回结构化错误对象，不直接抛异常
+- **日序列统计口径**：
+  - `daily_mean` / `daily_threshold_count` / `daily_percentile_rank` 会基于 `[start,end)` 构造完整日历序列，缺失日期按 0 补齐后再计算
 
 ## 环境准备
 

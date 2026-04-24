@@ -150,9 +150,35 @@ PLANNING_TOOL_SCHEMA = {
     },
 }
 
+TIME_REWRITE_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "rewrite_time_window",
+        "description": "重写时间窗口（左闭右开），仅返回 start/end（YYYY-MM-DD）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start": {"type": "string"},
+                "end": {"type": "string"},
+            },
+            "required": ["start", "end"],
+        },
+    },
+}
+
 
 class PlanningAgent:
     _SERIES_CANDIDATES = ("LS9", "LS8", "LS7", "LS6", "L7", "L6")
+    _TIME_REWRITE_WHITELIST = {
+        "yesterday",
+        "this_month_to_today",
+        "last_month",
+        "month_to_today",
+        "month",
+        "year",
+        "date",
+        "date_range",
+    }
 
     def __init__(self, client: OpenAI, schema_md: str, business_definition: str):
         self.client = client
@@ -259,6 +285,64 @@ class PlanningAgent:
                 return None
             return (start.isoformat(), end.isoformat())
 
+        def _parse_month_token(token: str) -> int | None:
+            if not token:
+                return None
+            raw = str(token).strip()
+            if not raw:
+                return None
+            if raw.isdigit():
+                try:
+                    v = int(raw)
+                    return v if 1 <= v <= 12 else None
+                except Exception:
+                    return None
+            mapping = {
+                "正": 1,
+                "一": 1,
+                "二": 2,
+                "两": 2,
+                "三": 3,
+                "四": 4,
+                "五": 5,
+                "六": 6,
+                "七": 7,
+                "八": 8,
+                "九": 9,
+                "十": 10,
+                "十一": 11,
+                "十二": 12,
+            }
+            if raw in mapping:
+                return mapping[raw]
+            return None
+
+        if "本月" in q:
+            start = _safe_date(today.year, today.month, 1)
+            if start:
+                return (start.isoformat(), today.isoformat())
+        if "上月" in q:
+            year = today.year
+            month = today.month - 1
+            if month <= 0:
+                year -= 1
+                month = 12
+            window = _month_window(year, month)
+            if window:
+                return window
+
+        m = re.search(
+            r"(?:(?P<y>\d{2,4})\s*年\s*)?(?P<m>\d{1,2}|正|十一|十二|[一二两三四五六七八九十])\s*月\s*"
+            r"(?:(?:到|至|[-~—–－])\s*)?(?:至今|到今|现在|目前|今天|今日|截至今日|截至今天|截至昨日|昨日)",
+            q,
+        )
+        if m:
+            year = _normalize_year(m.group("y")) or today.year
+            month = _parse_month_token(m.group("m")) or today.month
+            start = _safe_date(year, month, 1)
+            if start:
+                return (start.isoformat(), today.isoformat())
+
         if "前年" in q:
             window = _year_window(today.year - 2)
             if window:
@@ -303,13 +387,22 @@ class PlanningAgent:
             if window:
                 return window
 
-        m = re.search(r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月(?!\d)", q)
-        if m and ("整月" in q or "全月" in q or "整个月" in q):
+        m = re.search(r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月(?!\s*\d)", q)
+        if m:
             year = _normalize_year(m.group("y")) or today.year
             month = int(m.group("m"))
             window = _month_window(year, month)
             if window:
                 return window
+
+        m = re.search(r"(?:(?P<y>\d{2,4})\s*年\s*)?(?P<m>正|十一|十二|[一二两三四五六七八九十])\s*月(?!\s*\d)", q)
+        if m:
+            year = _normalize_year(m.group("y")) or today.year
+            month = _parse_month_token(m.group("m"))
+            if month:
+                window = _month_window(year, month)
+                if window:
+                    return window
 
         m = re.search(r"(?P<y>\d{2,4})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*[日号]?", q)
         if m:
@@ -1483,8 +1576,151 @@ class PlanningAgent:
     def create_plan(self, user_query: str, memory_context: dict | None = None) -> dict:
         plans = self.create_plans(user_query, memory_context=memory_context)
         if plans:
-            return plans[0]
+            first = plans[0]
+            if isinstance(first, dict) and first:
+                return self._validate_and_rewrite_time(first, user_query)
+            return first
         return {}
+
+    @staticmethod
+    def _contains_relative_to_today_hint(user_query: str) -> bool:
+        q = user_query or ""
+        return any(k in q for k in ["至今", "截至", "目前", "现在", "今日", "今天", "本月"])
+
+    @staticmethod
+    def _infer_time_window_type(user_query: str) -> str | None:
+        q = (user_query or "").strip()
+        if not q:
+            return None
+        if "昨天" in q or "昨日" in q:
+            return "yesterday"
+        if "本月" in q:
+            return "this_month_to_today"
+        if "上月" in q:
+            return "last_month"
+        if any(k in q for k in ["至今", "截至", "目前", "现在", "今日", "今天"]) and ("月" in q):
+            return "month_to_today"
+        if re.search(
+            r"\d{2,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*[日号]?\s*(?:到|至|[-~—–－])\s*(?:\d{2,4}\s*年\s*)?(?:\d{1,2}\s*月\s*)?\d{1,2}\s*[日号]?",
+            q,
+        ):
+            return "date_range"
+        if re.search(r"\d{4}-\d{2}-\d{2}\s*(?:到|至|[-~—–－])\s*\d{4}-\d{2}-\d{2}", q):
+            return "date_range"
+        if re.search(r"\d{2,4}\s*年\s*\d{1,2}\s*月(?!\s*\d)", q) or re.search(r"(?:(?:\d{2,4}\s*年\s*)?)(?:正|十一|十二|[一二两三四五六七八九十])\s*月(?!\s*\d)", q):
+            return "month"
+        if re.search(r"\d{2,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*[日号]?", q):
+            return "date"
+        if re.search(r"\d{2,4}\s*年(?!\s*\d|\s*月)", q):
+            return "year"
+        if re.search(r"\d{4}-\d{2}-\d{2}", q):
+            return "date"
+        return None
+
+    @staticmethod
+    def _safe_parse_iso_date(value: object) -> datetime.date | None:
+        if not isinstance(value, str):
+            return None
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            return datetime.date.fromisoformat(raw)
+        except Exception:
+            return None
+
+    def _rewrite_time_with_llm(
+        self,
+        user_query: str,
+        current_time: dict,
+        rule_window: tuple[str, str],
+        today: datetime.date,
+        time_type: str,
+    ) -> tuple[str, str] | None:
+        if self.client is None:
+            return rule_window
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是时间窗口修复器。"
+                    "给定用户问题与当前 time（start/end），当发现不一致时你需要重写 time。"
+                    "时间窗口必须是左闭右开：[start,end)。"
+                    "start/end 必须是 YYYY-MM-DD。"
+                    "如果时间类型为 this_month_to_today / month_to_today / yesterday，必须严格符合语义。"
+                    "必须与规则解析窗口一致。"
+                    "只输出工具调用 rewrite_time_window。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"今天日期: {today.isoformat()}\n"
+                    f"用户问题: {user_query}\n"
+                    f"时间类型: {time_type}\n"
+                    f"当前 time: {json.dumps(current_time, ensure_ascii=False)}\n"
+                    f"规则解析窗口(供参考): start={rule_window[0]} end={rule_window[1]}\n"
+                    "请重写 time.start/time.end。"
+                ),
+            },
+        ]
+        try:
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                tools=[TIME_REWRITE_TOOL_SCHEMA],
+                tool_choice={"type": "function", "function": {"name": "rewrite_time_window"}},
+            )
+            message = response.choices[0].message
+            tool_calls = message.tool_calls or []
+            for tool_call in tool_calls:
+                if tool_call.function.name != "rewrite_time_window":
+                    continue
+                args = json.loads(tool_call.function.arguments or "{}")
+                start = args.get("start")
+                end = args.get("end")
+                s = self._safe_parse_iso_date(start)
+                e = self._safe_parse_iso_date(end)
+                if not s or not e or e <= s:
+                    return rule_window
+                out = (s.isoformat(), e.isoformat())
+                if time_type in {"this_month_to_today", "month_to_today"} and out[1] != today.isoformat():
+                    return rule_window
+                if time_type == "yesterday" and out[1] != today.isoformat():
+                    return rule_window
+                if out != rule_window:
+                    return rule_window
+                return out
+        except Exception:
+            return rule_window
+        return rule_window
+
+    def _validate_and_rewrite_time(self, plan: dict, user_query: str, today: datetime.date | None = None) -> dict:
+        if not isinstance(plan, dict) or not plan:
+            return plan
+        time = plan.get("time")
+        if not isinstance(time, dict):
+            return plan
+        today = today or datetime.date.today()
+        rule_window = self._parse_time_window(user_query, today)
+        if not rule_window:
+            return plan
+        time_type = self._infer_time_window_type(user_query)
+        if not time_type or time_type not in self._TIME_REWRITE_WHITELIST:
+            return plan
+        if time.get("start") == rule_window[0] and time.get("end") == rule_window[1]:
+            return plan
+        rewritten = self._rewrite_time_with_llm(
+            user_query=user_query,
+            current_time=time,
+            rule_window=rule_window,
+            today=today,
+            time_type=time_type,
+        )
+        if rewritten:
+            time["start"], time["end"] = rewritten
+            plan["time"] = time
+        return plan
 
 
 def _extract_json_content(text: str) -> str:

@@ -375,7 +375,8 @@ def run_main_agent(user_query: str) -> str:
             memory_update = extract_memory_update(client=client, state=state, last_result=merged_step_text)
             apply_memory_update(state, memory_update)
         elif action.get("action") == "finish":
-            last_block = state.result_blocks[-1] if state.result_blocks else ""
+            combined_results = "\n\n---\n\n".join([_extract_result_text(b) for b in state.result_blocks if b]) if state.result_blocks else ""
+            last_block = f"执行结果:\n{combined_results}" if combined_results else ""
             finish_grounded_answer = _generate_finish_summary(
                 client=client,
                 user_query=user_query,
