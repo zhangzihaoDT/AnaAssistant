@@ -1,5 +1,8 @@
 from operators.active_store import run_active_store_operator
 from operators.retained_intention import run_retained_intention_operator
+from pathlib import Path
+import json
+from operators.series_group_logic import apply_series_group_logic
 
 
 def _is_active_store_plan(plan: dict, user_query: str) -> bool:
@@ -46,17 +49,12 @@ def run_registered_operator(plan: dict, user_query: str, query_tool) -> dict | N
                 series = f.get("value")
                 break
         
-        # 确保数据集应用了 series_group_logic
         if "series_group_logic" not in df.columns:
-            import sys
-            import json
-            sys.path.append('/Users/zihao_/Documents/coding/dataset/scripts')
-            from analyze_order import apply_series_group_logic
             try:
-                with open('/Users/zihao_/Documents/github/26W06_Tool_calls/schema/business_definition.json', 'r') as bdf:
-                    bdef = json.load(bdf)
+                bdef_path = Path(__file__).resolve().parents[1] / "schema" / "business_definition.json"
+                bdef = json.loads(bdef_path.read_text(encoding="utf-8")) if bdef_path.exists() else {}
                 df = apply_series_group_logic(df.copy(), bdef)
-            except Exception as e:
+            except Exception:
                 pass
                 
         return run_retained_intention_operator(df=df, series=series, start=start, end=end)

@@ -103,6 +103,13 @@ class QueryTool:
         self.schema_dir = Path(schema_dir)
         self.datasets: dict[str, pd.DataFrame] = {}
         self._loaded = False
+        self._business_definition: dict[str, Any] = {}
+        try:
+            bdef_path = self.schema_dir / "business_definition.json"
+            if bdef_path.exists():
+                self._business_definition = json.loads(bdef_path.read_text(encoding="utf-8"))
+        except Exception:
+            self._business_definition = {}
 
     def _parse_dataset_paths(self) -> list[Path]:
         if not self.data_path_file.exists():
@@ -204,6 +211,17 @@ class QueryTool:
         df = self.datasets[dataset_name].copy()
 
         filters = plan.get("filters", [])
+        needs_series_group = any(
+            isinstance(f, dict) and f.get("field") == "series_group_logic" for f in (filters or [])
+        )
+        if needs_series_group and "series_group_logic" not in df.columns:
+            try:
+                from operators.series_group_logic import apply_series_group_logic
+
+                df = apply_series_group_logic(df=df, business_definition=self._business_definition)
+            except Exception:
+                pass
+
         for f in filters:
             field = f.get("field")
             op = f.get("op")

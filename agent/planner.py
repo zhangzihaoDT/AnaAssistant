@@ -559,9 +559,11 @@ class PlanningAgent:
             elif ask_non_trial_car:
                 filters.append({"field": "order_type", "op": "!=", "value": "试驾车"})
 
-        has_series_filter = PlanningAgent._has_field_filter(filters, {"series", "product_name", "drive_series_cn", "belong_intent_series"})
-        if not has_series_filter:
-            series_tokens = PlanningAgent._infer_series_tokens(q)
+        series_tokens = PlanningAgent._infer_series_tokens(q)
+        has_series_filter = PlanningAgent._has_field_filter(
+            filters, {"series", "product_name", "drive_series_cn", "belong_intent_series"}
+        )
+        if (not has_series_filter) and series_tokens:
             if len(series_tokens) == 1:
                 filters.append({"field": "series", "op": "==", "value": series_tokens[0]})
             elif len(series_tokens) > 1:
@@ -1402,6 +1404,8 @@ class PlanningAgent:
                     "- 在营门店数问题优先走固定算子，plan.statistics 置空或不设置；时间字段优先 order_create_date。\n"
                     "- 用户出现‘试驾车’时 filters 必须含 order_type == 试驾车；出现‘用户车’时必须含 order_type == 用户车。\n"
                     "- 用户出现系列词（L6/L7/LS6/LS7/LS8/LS9）时，filters 应补充 series 约束。\n"
+                    "- 若用户出现 CM0/CM1/CM2/DM0/DM1 这类二级车型分组，需使用 business_definition.series_group_logic（product_name 逻辑）生成 filters，禁止把这些 token 直接写到 series 字段。\n"
+                    "- 注意：LS6/L6 是 series 车系，不要按 model_series_mapping 展开成 CM0/CM1/CM2 或 DM0/DM1；只有当用户明确问 CM0/CM1/CM2/DM0/DM1 时才使用 series_group_logic。\n"
                     "- 同比/年同比用 comparison.type=yoy；周环比用 comparison.type=wow；日环比（如“昨天日环比”）用 comparison.type=dod。\n"
                     "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank / weekend_percentile_rank，并补齐各自必需字段。\n"
                 ),

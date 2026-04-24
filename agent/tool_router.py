@@ -1,4 +1,5 @@
 import json
+import datetime
 
 from agent.planner import PlanningAgent
 from operators import run_registered_operator
@@ -124,6 +125,21 @@ def _execute_single_plan(
         else:
             numerator_metric = statistics.get("numerator_metric", {}) if isinstance(statistics, dict) else {}
             denominator_metric = statistics.get("denominator_metric", {}) if isinstance(statistics, dict) else {}
+            window_weeks = statistics.get("window_weeks") or 10
+            try:
+                window_weeks = int(window_weeks)
+            except Exception:
+                window_weeks = 10
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=(max(int(window_weeks), 1) * 7 + 7))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
             query_plan = {
                 "dataset": dataset,
                 "metrics": [
@@ -138,13 +154,13 @@ def _execute_single_plan(
                         "alias": denominator_metric.get("alias") or "门店线索数",
                     },
                 ],
-                "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                "dimensions": ([time_field] if time_field else []),
                 "filters": [
                     *filters_without_time,
-                    {"field": time_field, "op": ">=", "value": time_start},
-                    {"field": time_field, "op": "<", "value": time_end},
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
                 ]
-                if time_field and time_start and time_end
+                if time_field and query_time_start and query_time_end
                 else filters_without_time,
             }
             raw_df = query_tool.execute_analysis_df(query_plan)
@@ -217,6 +233,21 @@ def _execute_single_plan(
                 except Exception as e:
                     tool_result = {"type": "daily_threshold_count", "error": "statistics_execution_failed", "message": str(e)}
         else:
+            window_days = statistics.get("window_days") or 30
+            try:
+                window_days = int(window_days)
+            except Exception:
+                window_days = 30
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=max(int(window_days), 1))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
             query_plan = {
                 "dataset": dataset,
                 "metrics": [
@@ -226,13 +257,13 @@ def _execute_single_plan(
                         "alias": metric_alias,
                     }
                 ],
-                "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                "dimensions": ([time_field] if time_field else []),
                 "filters": [
                     *filters_without_time,
-                    {"field": time_field, "op": ">=", "value": time_start},
-                    {"field": time_field, "op": "<", "value": time_end},
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
                 ]
-                if time_field and time_start and time_end
+                if time_field and query_time_start and query_time_end
                 else filters_without_time,
             }
             raw_df = query_tool.execute_analysis_df(query_plan)
@@ -251,9 +282,9 @@ def _execute_single_plan(
                     stat_request = {
                         "type": "daily_threshold_count",
                         "time_field": statistics.get("time_field") or time_field,
-                        "window_days": statistics.get("window_days") or 30,
-                        "date_start": time_start,
-                        "date_end": time_end,
+                        "window_days": window_days,
+                        "date_start": query_time_start,
+                        "date_end": query_time_end,
                         "op": statistics.get("op") or ">",
                         "threshold": statistics.get("threshold") if isinstance(statistics, dict) else 0,
                         "metric_alias": metric_alias,
@@ -274,6 +305,21 @@ def _execute_single_plan(
                 "message": "daily_mean 暂不支持 comparison 联动，请使用单窗口查询。",
             }
         else:
+            window_days = statistics.get("window_days") or 30
+            try:
+                window_days = int(window_days)
+            except Exception:
+                window_days = 30
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=max(int(window_days), 1))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
             query_plan = {
                 "dataset": dataset,
                 "metrics": [
@@ -283,13 +329,13 @@ def _execute_single_plan(
                         "alias": metric_alias,
                     }
                 ],
-                "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                "dimensions": ([time_field] if time_field else []),
                 "filters": [
                     *filters_without_time,
-                    {"field": time_field, "op": ">=", "value": time_start},
-                    {"field": time_field, "op": "<", "value": time_end},
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
                 ]
-                if time_field and time_start and time_end
+                if time_field and query_time_start and query_time_end
                 else filters_without_time,
             }
             raw_df = query_tool.execute_analysis_df(query_plan)
@@ -308,9 +354,9 @@ def _execute_single_plan(
                     stat_request = {
                         "type": "daily_mean",
                         "time_field": statistics.get("time_field") or time_field,
-                        "window_days": statistics.get("window_days") or 30,
-                        "date_start": time_start,
-                        "date_end": time_end,
+                        "window_days": window_days,
+                        "date_start": query_time_start,
+                        "date_end": query_time_end,
                         "metric_alias": metric_alias,
                     }
                     try:
@@ -329,6 +375,21 @@ def _execute_single_plan(
                 "message": "daily_percentile_rank 暂不支持 comparison 联动，请使用单窗口查询。",
             }
         else:
+            window_days = statistics.get("window_days") or 30
+            try:
+                window_days = int(window_days)
+            except Exception:
+                window_days = 30
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=max(int(window_days), 1))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
             query_plan = {
                 "dataset": dataset,
                 "metrics": [
@@ -338,13 +399,13 @@ def _execute_single_plan(
                         "alias": metric_alias,
                     }
                 ],
-                "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                "dimensions": ([time_field] if time_field else []),
                 "filters": [
                     *filters_without_time,
-                    {"field": time_field, "op": ">=", "value": time_start},
-                    {"field": time_field, "op": "<", "value": time_end},
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
                 ]
-                if time_field and time_start and time_end
+                if time_field and query_time_start and query_time_end
                 else filters_without_time,
             }
             raw_df = query_tool.execute_analysis_df(query_plan)
@@ -363,9 +424,9 @@ def _execute_single_plan(
                     stat_request = {
                         "type": "daily_percentile_rank",
                         "time_field": statistics.get("time_field") or time_field,
-                        "window_days": statistics.get("window_days") or 30,
-                        "date_start": time_start,
-                        "date_end": time_end,
+                        "window_days": window_days,
+                        "date_start": query_time_start,
+                        "date_end": query_time_end,
                         "reference_date": statistics.get("reference_date"),
                         "metric_alias": metric_alias,
                     }
@@ -386,6 +447,21 @@ def _execute_single_plan(
                 "message": "weekend_percentile_rank 暂不支持 comparison 联动，请使用单窗口查询。",
             }
         else:
+            window_weekends = statistics.get("window_weekends") or 10
+            try:
+                window_weekends = int(window_weekends)
+            except Exception:
+                window_weekends = 10
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=(max(int(window_weekends), 1) * 7 + 7))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
             query_plan = {
                 "dataset": dataset,
                 "metrics": [
@@ -395,13 +471,13 @@ def _execute_single_plan(
                         "alias": metric_alias,
                     }
                 ],
-                "dimensions": dimensions if dimensions else ([time_field] if time_field else []),
+                "dimensions": ([time_field] if time_field else []),
                 "filters": [
                     *filters_without_time,
-                    {"field": time_field, "op": ">=", "value": time_start},
-                    {"field": time_field, "op": "<", "value": time_end},
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
                 ]
-                if time_field and time_start and time_end
+                if time_field and query_time_start and query_time_end
                 else filters_without_time,
             }
             raw_df = query_tool.execute_analysis_df(query_plan)
@@ -420,7 +496,7 @@ def _execute_single_plan(
                     stat_request = {
                         "type": "weekend_percentile_rank",
                         "time_field": statistics.get("time_field") or time_field,
-                        "window_weekends": statistics.get("window_weekends") or 10,
+                        "window_weekends": window_weekends,
                         "reference_date": statistics.get("reference_date"),
                         "metric_alias": metric_alias,
                     }
