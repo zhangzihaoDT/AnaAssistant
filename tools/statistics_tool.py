@@ -14,6 +14,8 @@ class StatisticsTool:
             return self._daily_percentile_rank(request, input_df)
         if stat_type == "weekend_percentile_rank":
             return self._weekend_percentile_rank(request, input_df)
+        if stat_type == "weekday_percentile_rank":
+            return self._weekday_percentile_rank(request, input_df)
         return f"不支持的统计类型: {stat_type}"
 
     @staticmethod
@@ -513,6 +515,119 @@ class StatisticsTool:
             "weekend_rows": weekend_rows,
         }
 
+    @staticmethod
+    def _weekday_percentile_rank(request: dict, input_df: pd.DataFrame) -> dict | str:
+        if input_df is None or input_df.empty:
+            return "统计分析无可用数据。"
+
+        time_field = request.get("time_field")
+        metric_alias = request.get("metric_alias")
+        if not isinstance(time_field, str) or not time_field:
+            return "统计分析缺少必要参数: time_field"
+        if not isinstance(metric_alias, str) or not metric_alias:
+            return "统计分析缺少必要参数: metric_alias"
+        if time_field not in input_df.columns:
+            return f"统计分析缺少时间列: {time_field}"
+        if metric_alias not in input_df.columns:
+            return f"统计分析缺少指标列: {metric_alias}"
+
+        window_weeks = request.get("window_weeks")
+        if isinstance(window_weeks, str) and str(window_weeks).isdigit():
+            window_weeks = int(window_weeks)
+        if not isinstance(window_weeks, int) or window_weeks <= 0:
+            window_weeks = 10
+
+        weekdays = request.get("weekdays")
+        if not isinstance(weekdays, list) or not weekdays:
+            weekdays = [7]
+        weekdays = [int(w) for w in weekdays if isinstance(w, (int, float, str)) and str(w).isdigit()]
+        weekdays = [w for w in weekdays if 1 <= int(w) <= 7]
+        weekdays = sorted(list(dict.fromkeys(weekdays)))
+        if not weekdays:
+            weekdays = [7]
+
+        df = input_df.copy()
+        raw_time = df[time_field].astype(str).str.strip()
+        parsed_cn = pd.to_datetime(raw_time, errors="coerce", format="%Y年%m月%d日")
+        if float(parsed_cn.notna().mean()) >= 0.8:
+            df[time_field] = parsed_cn
+        else:
+            df[time_field] = pd.to_datetime(raw_time, errors="coerce")
+        df = df[df[time_field].notna()]
+        if df.empty:
+            return "统计分析时间列无法解析为日期。"
+
+        df["date"] = df[time_field].dt.normalize()
+        df["_weekday"] = df["date"].dt.dayofweek + 1
+        df = df[df["_weekday"].isin(weekdays)]
+
+        grouped = (
+            df.groupby("date", as_index=False)
+            .agg({metric_alias: "sum"})
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+        date_start_raw = request.get("date_start")
+        date_end_raw = request.get("date_end")
+        date_start = pd.to_datetime(date_start_raw, errors="coerce") if isinstance(date_start_raw, str) else pd.NaT
+        date_end = pd.to_datetime(date_end_raw, errors="coerce") if isinstance(date_end_raw, str) else pd.NaT
+        if pd.notna(date_start) and pd.notna(date_end) and pd.Timestamp(date_end) > pd.Timestamp(date_start):
+            start = pd.Timestamp(date_start).normalize()
+            end = pd.Timestamp(date_end).normalize()
+        else:
+            end = (
+                pd.Timestamp(grouped["date"].max()).normalize() + pd.Timedelta(days=1)
+                if not grouped.empty
+                else pd.Timestamp.today().normalize() + pd.Timedelta(days=1)
+            )
+            start = end - pd.Timedelta(days=int(window_weeks) * 7)
+
+        date_index = pd.date_range(start=start, end=end - pd.Timedelta(days=1), freq="D")
+        weekday_index = pd.DatetimeIndex([d for d in date_index if (pd.Timestamp(d).dayofweek + 1) in set(weekdays)])
+        if weekday_index.empty:
+            return "统计分析窗口内无指定周内日数据。"
+
+        series = (
+            grouped.set_index("date")[metric_alias]
+            .astype(float)
+            .reindex(weekday_index, fill_value=0.0)
+            .tail(int(window_weeks))
+        )
+        total = int(len(series))
+
+        ref_raw = request.get("reference_date")
+        reference_date = pd.to_datetime(ref_raw, errors="coerce") if isinstance(ref_raw, str) else pd.NaT
+        if pd.isna(reference_date):
+            reference_date = series.index.max()
+        reference_date = pd.Timestamp(reference_date).normalize()
+        if reference_date not in set(pd.Timestamp(d).normalize() for d in series.index):
+            reference_date = series.index.max()
+        reference_value = float(series.get(reference_date, 0.0))
+
+        less_count = int((series < reference_value).sum())
+        le_count = int((series <= reference_value).sum())
+        percentile_rank = 0.0 if total == 0 else (le_count / total)
+
+        daily_rows: list[dict] = []
+        for date, value in series.items():
+            daily_rows.append({"date": pd.Timestamp(date).strftime("%Y-%m-%d"), "value": float(value)})
+
+        return {
+            "type": "weekday_percentile_rank",
+            "weekdays": weekdays,
+            "window_weeks": int(window_weeks),
+            "metric_alias": metric_alias,
+            "reference_date": reference_date.strftime("%Y-%m-%d"),
+            "reference_value": reference_value,
+            "less_count": less_count,
+            "le_count": le_count,
+            "total_days": total,
+            "percentile_rank": percentile_rank,
+            "percentile_pct": percentile_rank * 100.0,
+            "daily_rows": daily_rows,
+        }
+
 
 STATISTICS_TOOL_SCHEMA = {
     "type": "function",
@@ -524,7 +639,14 @@ STATISTICS_TOOL_SCHEMA = {
             "properties": {
                 "type": {
                     "type": "string",
-                    "enum": ["weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank", "weekend_percentile_rank"],
+                    "enum": [
+                        "weekly_decline_ratio",
+                        "daily_threshold_count",
+                        "daily_mean",
+                        "daily_percentile_rank",
+                        "weekend_percentile_rank",
+                        "weekday_percentile_rank",
+                    ],
                 },
                 "time_field": {"type": "string"},
                 "window_weeks": {"type": "integer"},
@@ -537,6 +659,7 @@ STATISTICS_TOOL_SCHEMA = {
                 "op": {"type": "string", "enum": [">", ">=", "<", "<=", "==", "!="]},
                 "threshold": {"type": "number"},
                 "metric_alias": {"type": "string"},
+                "numerator_alias": {"type": "string"},
                 "numerator_alias": {"type": "string"},
                 "denominator_alias": {"type": "string"},
             },

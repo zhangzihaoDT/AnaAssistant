@@ -87,6 +87,7 @@ PLANNING_TOOL_SCHEMA = {
                                             "daily_mean",
                                             "daily_percentile_rank",
                                             "weekend_percentile_rank",
+                                            "weekday_percentile_rank",
                                         ],
                                     },
                                     "time_field": {"type": "string"},
@@ -655,7 +656,7 @@ class PlanningAgent:
     @staticmethod
     def _parse_recent_weeks(user_query: str) -> int | None:
         q = user_query or ""
-        m = re.search(r"近\s*(\d{1,3})\s*周", q)
+        m = re.search(r"近\s*(\d{1,3})\s*(?:个)?\s*周", q)
         if not m:
             return None
         try:
@@ -790,6 +791,17 @@ class PlanningAgent:
         has_recent_weekend = bool(re.search(r"近\s*\d+\s*(?:个)?\s*周末", q))
         has_ref = any(k in q for k in ["本周末", "这个周末", "上周末", "上一个周末"])
         return has_level and has_weekend and (has_recent_weekend or has_ref)
+
+    @staticmethod
+    def _is_weekday_percentile_rank_query(user_query: str) -> bool:
+        q = user_query or ""
+        if not q:
+            return False
+        has_level = any(k in q for k in ["处于什么水平", "什么水平", "处于什么位置", "高低水平", "分位", "百分位"])
+        has_weekday = bool(PlanningAgent._parse_weekdays(q))
+        has_recent_weeks = bool(re.search(r"近\s*\d+\s*(?:个)?\s*周", q))
+        has_ref = any(k in q for k in ["昨天", "昨日", "今天", "今日"])
+        return has_level and has_weekday and has_recent_weeks and has_ref
 
     @staticmethod
     def _extract_explicit_time_window(user_query: str, today: datetime.date) -> tuple[str, str] | None:
@@ -1003,6 +1015,41 @@ class PlanningAgent:
         }
         return self._fill_defaults(self._normalize_plan(plan), user_query)
 
+    def _build_weekday_percentile_rank_plan(self, user_query: str) -> dict | None:
+        metric_defaults = self._metric_defaults(user_query)
+        if not metric_defaults:
+            return None
+        today = datetime.date.today()
+        weeks = self._parse_recent_weeks(user_query) or 10
+        weekdays = self._parse_weekdays(user_query) or [7]
+        start = today - datetime.timedelta(days=(weeks * 7 + 7))
+        end = today + datetime.timedelta(days=1)
+        time_field = metric_defaults["time_field"]
+        value_metric = metric_defaults["metric"]
+        reference_date = (
+            (today - datetime.timedelta(days=1)).isoformat()
+            if any(k in user_query for k in ["昨天", "昨日"])
+            else today.isoformat()
+        )
+        plan = {
+            "dataset": metric_defaults["dataset"],
+            "metric": value_metric,
+            "time": {"field": time_field, "start": start.isoformat(), "end": end.isoformat()},
+            "dimensions": [time_field],
+            "filters": [{"field": time_field, "op": "!=", "value": None}],
+            "comparison": {"type": "none"},
+            "statistics": {
+                "type": "weekday_percentile_rank",
+                "time_field": time_field,
+                "window_weeks": weeks,
+                "weekdays": weekdays,
+                "reference_date": reference_date,
+                "value_metric": value_metric,
+            },
+            "question": "指定周内日锁单数在近N周中的分位",
+        }
+        return self._fill_defaults(self._normalize_plan(plan), user_query)
+
     @staticmethod
     def _statistics_plan_valid(statistics: dict, plan: dict) -> bool:
         stype = statistics.get("type")
@@ -1058,6 +1105,28 @@ class PlanningAgent:
             if not value_metric.get("field") or not value_metric.get("agg"):
                 return False
             return True
+
+        if stype == "weekday_percentile_rank":
+            time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
+            value_metric = statistics.get("value_metric")
+            weekdays = statistics.get("weekdays")
+            window_weeks = statistics.get("window_weeks")
+            reference_date = statistics.get("reference_date")
+            if not isinstance(time_field, str) or not time_field:
+                return False
+            if not isinstance(value_metric, dict):
+                return False
+            if not value_metric.get("field") or not value_metric.get("agg"):
+                return False
+            if not isinstance(weekdays, list) or not weekdays:
+                return False
+            try:
+                window_weeks = int(window_weeks)
+            except Exception:
+                return False
+            if reference_date is not None and not isinstance(reference_date, str):
+                return False
+            return window_weeks > 0
 
         if stype == "daily_percentile_rank":
             time_field = statistics.get("time_field") or (plan.get("time", {}) or {}).get("field")
@@ -1202,7 +1271,14 @@ class PlanningAgent:
             plan["statistics"] = {}
         elif isinstance(statistics, dict):
             stype = statistics.get("type")
-            if stype not in {"weekly_decline_ratio", "daily_threshold_count", "daily_mean", "daily_percentile_rank", "weekend_percentile_rank"}:
+            if stype not in {
+                "weekly_decline_ratio",
+                "daily_threshold_count",
+                "daily_mean",
+                "daily_percentile_rank",
+                "weekend_percentile_rank",
+                "weekday_percentile_rank",
+            }:
                 plan["statistics"] = {}
             elif stype == "weekly_decline_ratio":
                 wdays = statistics.get("weekdays")
@@ -1241,6 +1317,19 @@ class PlanningAgent:
                 wends = statistics.get("window_weekends")
                 if isinstance(wends, str) and wends.isdigit():
                     statistics["window_weekends"] = int(wends)
+            elif stype == "weekday_percentile_rank":
+                wdays = statistics.get("weekdays")
+                if isinstance(wdays, list):
+                    normalized = []
+                    for w in wdays:
+                        if isinstance(w, (int, float, str)) and str(w).isdigit():
+                            iv = int(w)
+                            if 1 <= iv <= 7:
+                                normalized.append(iv)
+                    statistics["weekdays"] = sorted(list(dict.fromkeys(normalized)))
+                wweeks = statistics.get("window_weeks")
+                if isinstance(wweeks, str) and wweeks.isdigit():
+                    statistics["window_weeks"] = int(wweeks)
             if not PlanningAgent._statistics_plan_valid(statistics, plan):
                 plan["statistics"] = {}
 
@@ -1306,6 +1395,14 @@ class PlanningAgent:
             q = plan.get("question") or user_query
             normalized = self._fill_defaults(self._normalize_plan(plan), q)
             has_compare = any(k in q for k in ["对比", "相比", "对照", "较"])
+            if self._is_weekday_percentile_rank_query(q):
+                stat = normalized.get("statistics")
+                if not isinstance(stat, dict) or stat.get("type") != "weekday_percentile_rank":
+                    weekday_plan = self._build_weekday_percentile_rank_plan(q)
+                    if isinstance(weekday_plan, dict) and weekday_plan:
+                        weekday_plan["question"] = q
+                        finalized.append(weekday_plan)
+                        continue
             if self._is_weekend_percentile_rank_query(q):
                 stat = normalized.get("statistics")
                 if not isinstance(stat, dict) or stat.get("type") != "weekend_percentile_rank":
@@ -1407,7 +1504,8 @@ class PlanningAgent:
                     "- 若用户出现 CM0/CM1/CM2/DM0/DM1 这类二级车型分组，需使用 business_definition.series_group_logic（product_name 逻辑）生成 filters，禁止把这些 token 直接写到 series 字段。\n"
                     "- 注意：LS6/L6 是 series 车系，不要按 model_series_mapping 展开成 CM0/CM1/CM2 或 DM0/DM1；只有当用户明确问 CM0/CM1/CM2/DM0/DM1 时才使用 series_group_logic。\n"
                     "- 同比/年同比用 comparison.type=yoy；周环比用 comparison.type=wow；日环比（如“昨天日环比”）用 comparison.type=dod。\n"
-                    "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank / weekend_percentile_rank，并补齐各自必需字段。\n"
+                    "- 时序统计类按类型输出 statistics：weekly_decline_ratio / daily_threshold_count / daily_mean / daily_percentile_rank / weekend_percentile_rank / weekday_percentile_rank，并补齐各自必需字段。\n"
+                    "- 若用户问“近 N 个周的周日/周一..周日 处于什么水平”，使用 weekday_percentile_rank，并设置 window_weeks=N、weekdays=[对应周内日]、reference_date=昨天/今天。\n"
                 ),
             },
             {"role": "user", "content": user_query},
@@ -1485,6 +1583,11 @@ class PlanningAgent:
                     return [p]
             if intent == "statistics" and self._is_weekend_percentile_rank_query(part):
                 p = self._build_weekend_percentile_rank_plan(part)
+                if isinstance(p, dict) and p:
+                    p["question"] = part
+                    return [p]
+            if intent == "statistics" and self._is_weekday_percentile_rank_query(part):
+                p = self._build_weekday_percentile_rank_plan(part)
                 if isinstance(p, dict) and p:
                     p["question"] = part
                     return [p]

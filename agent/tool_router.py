@@ -505,6 +505,80 @@ def _execute_single_plan(
                     except Exception as e:
                         tool_result = {"type": "weekend_percentile_rank", "error": "statistics_execution_failed", "message": str(e)}
 
+    elif stats_type == "weekday_percentile_rank" and tool_result is None:
+        execution_meta = {"engine": "statistics", "route": "statistics.weekday_percentile_rank"}
+        print("\n[Thinking] 执行指定周内日分位分析...")
+        value_metric = statistics.get("value_metric", {}) if isinstance(statistics, dict) else {}
+        metric_alias = value_metric.get("alias") or metric.get("alias") or "value"
+        if comparison_df is not None:
+            tool_result = {
+                "type": "weekday_percentile_rank",
+                "error": "unsupported_pipeline_input",
+                "message": "weekday_percentile_rank 暂不支持 comparison 联动，请使用单窗口查询。",
+            }
+        else:
+            window_weeks = statistics.get("window_weeks") or 10
+            try:
+                window_weeks = int(window_weeks)
+            except Exception:
+                window_weeks = 10
+            weekdays = statistics.get("weekdays") if isinstance(statistics, dict) else None
+            query_time_start = time_start
+            query_time_end = time_end
+            try:
+                if time_end:
+                    end_day = datetime.date.fromisoformat(str(time_end)[:10])
+                    start_day = end_day - datetime.timedelta(days=(max(int(window_weeks), 1) * 7 + 7))
+                    query_time_start = start_day.isoformat()
+                    query_time_end = end_day.isoformat()
+            except Exception:
+                pass
+            query_plan = {
+                "dataset": dataset,
+                "metrics": [
+                    {
+                        "field": value_metric.get("field") or metric.get("field"),
+                        "agg": value_metric.get("agg") or metric.get("agg") or "count",
+                        "alias": metric_alias,
+                    }
+                ],
+                "dimensions": ([time_field] if time_field else []),
+                "filters": [
+                    *filters_without_time,
+                    {"field": time_field, "op": ">=", "value": query_time_start},
+                    {"field": time_field, "op": "<", "value": query_time_end},
+                ]
+                if time_field and query_time_start and query_time_end
+                else filters_without_time,
+            }
+            raw_df = query_tool.execute_analysis_df(query_plan)
+            if isinstance(raw_df, str):
+                tool_result = raw_df
+            else:
+                missing_cols = [c for c in [statistics.get("time_field") or time_field, metric_alias] if c not in raw_df.columns]
+                if missing_cols:
+                    print(f"  ⚠️  weekday_percentile_rank 输入列缺失，返回结构化错误: {missing_cols}")
+                    tool_result = {
+                        "type": "weekday_percentile_rank",
+                        "error": "invalid_statistics_input_schema",
+                        "missing_columns": missing_cols,
+                    }
+                else:
+                    stat_request = {
+                        "type": "weekday_percentile_rank",
+                        "time_field": statistics.get("time_field") or time_field,
+                        "window_weeks": window_weeks,
+                        "weekdays": weekdays,
+                        "date_start": query_time_start,
+                        "date_end": query_time_end,
+                        "reference_date": statistics.get("reference_date"),
+                        "metric_alias": metric_alias,
+                    }
+                    try:
+                        tool_result = statistics_tool.perform_statistics(stat_request, raw_df)
+                    except Exception as e:
+                        tool_result = {"type": "weekday_percentile_rank", "error": "statistics_execution_failed", "message": str(e)}
+
     if tool_result is None:
         execution_meta = {"engine": "dsl", "route": "query_tool"}
         print("\n[Thinking] 执行单次查询...")

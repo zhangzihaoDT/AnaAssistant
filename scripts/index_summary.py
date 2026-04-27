@@ -8,6 +8,8 @@
 2) 单日模式
    python scripts/index_summary.py --date 2026-03-10
    输出该日 JSON 指标结果。
+   python scripts/index_summary.py --date yesterday
+   python scripts/index_summary.py --date yesterday SPLW
 
 3) 周期模式
    python scripts/index_summary.py --start 2026-03-01 --end 2026-03-10 [--csv-out ...] [--print-json] [--include-days]
@@ -26,6 +28,12 @@ import pandas as pd
 
 def _parse_target_date(value: str) -> pd.Timestamp:
     value = str(value).strip()
+    lower = value.lower()
+    if lower in {"yesterday", "昨日"}:
+        return (pd.Timestamp.today().normalize() - pd.Timedelta(days=1)).normalize()
+    if lower in {"today", "今日"}:
+        return pd.Timestamp.today().normalize()
+
     m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", value)
     if m:
         y, mo, d = map(int, m.groups())
@@ -40,6 +48,23 @@ def _parse_target_date(value: str) -> pd.Timestamp:
     if pd.isna(parsed):
         raise ValueError(f"无法解析日期: {value}")
     return pd.Timestamp(parsed).normalize()
+
+
+def _parse_single_date_args(date_args: object) -> tuple[pd.Timestamp, str | None]:
+    if isinstance(date_args, list):
+        parts = [str(x).strip() for x in date_args if str(x).strip()]
+    else:
+        parts = [str(date_args).strip()] if date_args is not None else []
+    if not parts:
+        raise ValueError("缺少 --date")
+
+    base_date = _parse_target_date(parts[0])
+    modifiers = {p.strip().upper() for p in parts[1:]}
+    if not modifiers:
+        return (base_date, None)
+    if modifiers == {"SPLW"}:
+        return (base_date, "SPLW")
+    raise ValueError(f"无法识别 --date 修饰符: {' '.join(sorted(modifiers))}")
 
 
 def _read_data_paths(md_path: Path) -> dict[str, Path]:
@@ -1434,7 +1459,7 @@ def _default_maintenance_csv_path() -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default=None)
+    parser.add_argument("--date", nargs="+", default=None)
     parser.add_argument("--start", default=None)
     parser.add_argument("--end", default=None)
     parser.add_argument("--include-days", action="store_true")
@@ -1486,7 +1511,7 @@ def main() -> None:
     if not is_range:
         if not args.date:
             raise ValueError("单日模式必须提供 --date")
-        target_date = _parse_target_date(args.date)
+        target_date, compare_mode = _parse_single_date_args(args.date)
 
         order_metrics = _calc_order_metrics(order_path, target_date)
         attribution_metrics = (
@@ -1521,6 +1546,41 @@ def main() -> None:
             "下发线索转化率": assign_metrics,
             "试驾分析": _calc_test_drive_metrics(test_drive_path, target_date),
         }
+        if compare_mode == "SPLW":
+            splw_date = target_date - pd.Timedelta(days=7)
+            splw_order_metrics = _calc_order_metrics(order_path, splw_date)
+            splw_attribution_metrics = (
+                None
+                if attribution_path is None
+                else _calc_attribution_metrics(
+                    attribution_path=attribution_path,
+                    target_date=splw_date,
+                    order_lock_people_non_test_drive=int(
+                        splw_order_metrics.get("锁单人数（order_type != 试驾车）") or 0
+                    ),
+                )
+            )
+            splw_assign_metrics = _calc_assign_metrics(assign_path, splw_date)
+            splw_avg_locks_per_store = _safe_div(
+                splw_order_metrics.get("锁单数", 0), splw_order_metrics.get("在营门店数", 0)
+            )
+            splw_order_metrics["店均锁单数"] = (
+                None if splw_avg_locks_per_store is None else round(splw_avg_locks_per_store, 2)
+            )
+            splw_avg_daily_leads_per_store = _safe_div(
+                splw_assign_metrics.get("下发线索数", 0), splw_assign_metrics.get("下发门店数", 0)
+            )
+            splw_order_metrics["店日均下发线索数"] = (
+                None if splw_avg_daily_leads_per_store is None else round(splw_avg_daily_leads_per_store, 2)
+            )
+            result["compare"] = {
+                "type": "SPLW",
+                "date": str(splw_date.date()),
+                "订单分析": splw_order_metrics,
+                "归因分析": splw_attribution_metrics,
+                "下发线索转化率": splw_assign_metrics,
+                "试驾分析": _calc_test_drive_metrics(test_drive_path, splw_date),
+            }
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
