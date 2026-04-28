@@ -31,11 +31,11 @@
 - 可选 --series-city-scatter-out：输出城市散点图 HTML（同一文件内分四段：CM2纯电/CM2增程/LS8/LS9；需要环境中已安装 plotly）
 
 运行示例：
-python3 scripts/compare_listing_plus4_store_type.py
-python3 scripts/compare_listing_plus4_store_type.py --by-region
-python3 scripts/compare_listing_plus4_store_type.py --by-region --region-city-bubble-out scripts/reports/region_city_bubbles.html
-python3 scripts/compare_listing_plus4_store_type.py --city-topn 15 --city-total-topn 15
-python3 scripts/compare_listing_plus4_store_type.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+python3 scripts/compare_store_lock.py
+python3 scripts/compare_store_lock.py --by-region
+python3 scripts/compare_store_lock.py --by-region --region-city-bubble-out scripts/reports/region_city_bubbles.html
+python3 scripts/compare_store_lock.py --city-topn 15 --city-total-topn 15
+python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
 """
 
 import argparse

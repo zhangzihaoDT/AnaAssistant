@@ -130,6 +130,13 @@
 - `main_lead_id`: 关联试驾表的主线索 ID
 - `vin`: 车辆识别代码(VIN)
 
+### 选配信息 (仅限 config_attribute.parquet)
+
+- `Order Number`: 订单号（与 `order_data.parquet` 的 `order_number` 对应，但字段名不同）
+- `Attribute`: 选配项名称
+- `value`: 选配项取值（常见为“是/否”，也可能是具体配置值）
+- `is_staff`: 是否员工单标记（布尔）
+
 ---
 
 ## 附录：原始字段 Schema 映射
@@ -202,3 +209,12 @@
 | 下发线索数（直播）               | int64     | 下发线索总数（直播）                |
 | 下发门店数                       | int64     | 下发门店数量                        |
 | 主要渠道统计覆盖率               | float64   | 主要渠道统计覆盖率                  |
+
+### config_attribute.parquet (Total Rows: 2196954)
+
+| Column Name | Data Type | Description |
+| :--- | :--- | :--- |
+| Order Number | str | 订单号 |
+| Attribute | str | 选配项名称 |
+| value | str | 选配项取值 |
+| is_staff | boolean | 是否员工单标记 |

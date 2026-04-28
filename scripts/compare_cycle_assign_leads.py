@@ -1,3 +1,24 @@
+"""
+---
+name: compare_cycle_assign_leads
+type: script
+path: scripts/compare_cycle_assign_leads.py
+updated_at: "2026-04-21 20:13"
+summary: 对比两个窗口（A/B）线索相关指标均值；内部调用 index_summary
+inputs:
+  - schema/data_path.md (optional, via --data-path-md)
+  - scripts/index_summary.py
+outputs:
+  - stdout: 对比表（A/B 窗口）
+  - out/index_summary_<name>.json
+  - out/index_summary_<name>.csv
+  - optional: markdown table (via --md-out)
+cli:
+  - python3 scripts/compare_cycle_assign_leads.py --a-start 2026-01-01 --a-end 2026-02-01 --b-start 2026-02-01 --b-end 2026-03-01
+  - python3 scripts/compare_cycle_assign_leads.py --series LS8 --listing-plus-days 30 --md-out out/LS8上市后30天.md
+---
+"""
+
 import argparse
 import json
 import subprocess
