@@ -20,6 +20,7 @@ cli:
   - python3 scripts/compare_store_lock.py --with-city-rank --city-topn 15 --city-total-topn 15
   - python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12 --region-city-bubble-out scripts/reports/region_city_bubbles.html
   - python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+  - python3 scripts/compare_store_lock.py --series-city-scatter-days 12 --series-city-scatter-out scripts/reports/series_city_scatter.html
 ---
 
 使用指南：
@@ -29,7 +30,8 @@ cli:
 - 输出城市榜单（并调整 TopN）：python3 scripts/compare_store_lock.py --with-city-rank --city-topn 15 --city-total-topn 15
 - 控制气泡图“上市后天数”：python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12
 - 指定城市气泡图输出路径：python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12 --region-city-bubble-out scripts/reports/region_city_bubbles.html
-- 输出城市散点图（需 plotly）：python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+- 输出城市散点图（需 plotly，上市后天数默认 12）：python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+- 控制散点图“上市后天数”：python3 scripts/compare_store_lock.py --series-city-scatter-days 12 --series-city-scatter-out scripts/reports/series_city_scatter.html
 """
 
 import argparse
@@ -357,6 +359,7 @@ def main() -> None:
     parser.add_argument("--city-topn", type=int, default=10)
     parser.add_argument("--city-total-topn", type=int, default=10)
     parser.add_argument("--series-city-scatter-out", default="")
+    parser.add_argument("--series-city-scatter-days", type=int, default=12)
     args = parser.parse_args()
 
     business_def = json.loads(Path(str(args.business_def)).read_text(encoding="utf-8"))
@@ -923,6 +926,7 @@ def main() -> None:
     if str(args.series_city_scatter_out or "").strip():
         import plotly.graph_objects as go
         import plotly.io as pio
+        scatter_days = max(1, int(args.series_city_scatter_days or 12))
 
         palette = [
             "#006BA4",
@@ -964,7 +968,7 @@ def main() -> None:
             group = str(spec["name"])
             tp = time_periods[str(spec["base"])]
             listing_day = pd.Timestamp(str(tp["end"])).normalize()
-            end_excl = listing_day + pd.Timedelta(days=int(listing_plus_days))
+            end_excl = listing_day + pd.Timedelta(days=int(scatter_days))
 
             m_group = _parse_sql_condition(df, str(spec["logic"])).fillna(False)
             locks_all_by_city = _calc_lock_counts_by_city(df, listing_day, end_excl)
@@ -1082,9 +1086,9 @@ def main() -> None:
 
             fig = go.Figure(data=traces)
             fig.update_layout(
-                title=f"{group} 上市后{listing_plus_days}天 城市店均锁单数 vs 偏好度（份额Lift，按大区）",
+                title=f"{group} 上市后{scatter_days}天 城市店均锁单数 vs 偏好度（份额Lift，按大区）",
                 template="plotly_white",
-                xaxis_title=f"城市{group}店均锁单数（上市后{listing_plus_days}天）",
+                xaxis_title=f"城市{group}店均锁单数（上市后{scatter_days}天）",
                 yaxis_title=f"偏好度（本城{group}占比 / 全国{group}占比，log轴）",
                 yaxis_type="log",
                 legend_title_text="大区",
