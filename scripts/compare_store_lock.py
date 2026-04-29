@@ -1,41 +1,35 @@
 """
-对比 CM2纯电 / CM2增程 / LS8 / LS9 在“上市后 N 天”窗口的锁单表现，并按新/老门店拆分；可选按大区进一步拆分，并输出城市榜单。
+---
+name: compare_store_lock
+type: script
+path: scripts/compare_store_lock.py
+updated_at: "2026-04-29 00:00"
+summary: 对比车系“上市后 N 天”锁单，新/老门店拆分；可选大区汇总与城市榜单/图表
+inputs:
+  - schema/data_path.md (optional, via --data-path-md; key: 订单分析/智己大区分布)
+  - schema/business_definition.json (optional, via --business-def; keys: time_periods/series_group_logic/product_type_logic)
+outputs:
+  - stdout: 新门店/老门店对比表
+  - optional: stdout 城市榜单 (via --with-city-rank)
+  - optional: scripts/reports/region_city_bubbles.html (via --by-region; needs plotly)
+  - optional: scripts/reports/series_city_scatter.html (via --series-city-scatter-out; needs plotly)
+cli:
+  - python3 scripts/compare_store_lock.py
+  - python3 scripts/compare_store_lock.py --listing-plus-days 12
+  - python3 scripts/compare_store_lock.py --by-region
+  - python3 scripts/compare_store_lock.py --with-city-rank --city-topn 15 --city-total-topn 15
+  - python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12 --region-city-bubble-out scripts/reports/region_city_bubbles.html
+  - python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+---
 
-输入依赖：
-- --data-path-md（默认 schema/data_path.md）
-  - 订单分析：订单分析 parquet 路径（必需）
-  - 智己大区分布：TSV 路径（可选，字段 store_city / parent_region_name）
-- --business-def（默认 schema/business_definition.json）
-  - time_periods：每个车系的 start / end（end 作为上市日）
-  - series_group_logic：各车系 product_name 命中逻辑
-  - product_type_logic：纯电/增程拆分逻辑（用于拆分 CM2）
-
-窗口口径：
-- 预售期：[start, end+1)（包含 end 当天）
-- 上市日：listing_day = end
-- 上市后 N 天：[listing_day, listing_day+N)（包含上市日到上市+N-1 天）
-- N 默认：max(4, 今天 - max(time_periods[*].end) + 1)
-
-指标口径：
-- 门店新老：以上市日为参照，(上市日 - 门店开业日).days > 300 为老门店，否则新门店；门店开业日取 store_name 维度 store_create_date 最小值
-- 预售期留存小订数：预售期内 intention_payment_time 支付，且在 end+1 前未退订（intention_refund_time 为空或 >= end+1）
-- 本车系锁单数：上市后 N 天内 lock_time，且 product_name 命中 series_group_logic
-- 其他车系锁单数：上市后 N 天内 lock_time，且 product_name 不命中 series_group_logic
-- 在营门店数：以上市日为参照，上市日往前 29 天~上市日（共 30 天）内有下单创建（order_create_date）且开业日 <= 上市日，按新/老拆分
-- 店均锁单数：(本车系锁单数 + 其他车系锁单数) / 在营门店数
-
-输出内容（stdout）：
-- 新门店 / 老门店：CM2纯电、CM2增程、LS8、LS9 对比表
-- 可选 --by-region：仅输出按 parent_region_name 拆分的大区汇总表，并额外输出车系城市气泡图 HTML（同一文件内分四段：CM2纯电/CM2增程/LS8/LS9）
-- 城市榜单：每个车系输出“店均锁单 TOPN 城市”和“本车系锁单总数 TOPN 城市”
-- 可选 --series-city-scatter-out：输出城市散点图 HTML（同一文件内分四段：CM2纯电/CM2增程/LS8/LS9；需要环境中已安装 plotly）
-
-运行示例：
-python3 scripts/compare_store_lock.py
-python3 scripts/compare_store_lock.py --by-region
-python3 scripts/compare_store_lock.py --by-region --region-city-bubble-out scripts/reports/region_city_bubbles.html
-python3 scripts/compare_store_lock.py --city-topn 15 --city-total-topn 15
-python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
+使用指南：
+- 基础对比（新门店/老门店）：python3 scripts/compare_store_lock.py
+- 控制上市后窗口天数 N：python3 scripts/compare_store_lock.py --listing-plus-days 12
+- 大区汇总（可选输出城市气泡图，需 plotly）：python3 scripts/compare_store_lock.py --by-region
+- 输出城市榜单（并调整 TopN）：python3 scripts/compare_store_lock.py --with-city-rank --city-topn 15 --city-total-topn 15
+- 控制气泡图“上市后天数”：python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12
+- 指定城市气泡图输出路径：python3 scripts/compare_store_lock.py --by-region --region-city-bubble-days 12 --region-city-bubble-out scripts/reports/region_city_bubbles.html
+- 输出城市散点图（需 plotly）：python3 scripts/compare_store_lock.py --series-city-scatter-out scripts/reports/series_city_scatter.html
 """
 
 import argparse
@@ -45,6 +39,22 @@ import re
 from pathlib import Path
 
 import pandas as pd
+
+
+def _normalize_city_series(s: pd.Series) -> pd.Series:
+    s = s.astype("string").fillna("").str.strip()
+    s = s.str.replace(r"\s+", "", regex=True)
+    s = s.str.replace(r"(市|地区|盟|城区)$", "", regex=True)
+    return s
+
+
+def _canonical_city_series(s: pd.Series) -> pd.Series:
+    s = s.astype("string").fillna("").str.strip()
+    norm = _normalize_city_series(s)
+    municipalities = {"上海", "北京", "天津", "重庆"}
+    canon = norm.where(norm.isin(municipalities), s)
+    canon = canon.where(~canon.isin(municipalities), canon + "市")
+    return canon.replace("", "未知")
 
 
 def _read_data_paths(md_path: Path) -> dict[str, Path]:
@@ -77,9 +87,18 @@ def _load_parent_region_map(path: Path) -> dict[str, str]:
         return {}
     df = df.loc[:, ["store_city", "parent_region_name"]].dropna()
     df["store_city"] = df["store_city"].astype("string").str.strip()
+    df["store_city_norm"] = _normalize_city_series(df["store_city"])
     df["parent_region_name"] = df["parent_region_name"].astype("string").str.strip()
     df = df.drop_duplicates(subset=["store_city"], keep="first")
-    return dict(zip(df["store_city"].tolist(), df["parent_region_name"].tolist()))
+
+    out: dict[str, str] = dict(zip(df["store_city"].tolist(), df["parent_region_name"].tolist()))
+    for city, region in zip(df["store_city_norm"].tolist(), df["parent_region_name"].tolist()):
+        city = str(city).strip()
+        region = str(region).strip()
+        if not city:
+            continue
+        out.setdefault(city, region)
+    return out
 
 
 def _parse_sql_condition(df: pd.DataFrame, condition_str: str) -> pd.Series:
@@ -330,8 +349,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path-md", default="schema/data_path.md")
     parser.add_argument("--business-def", default="schema/business_definition.json")
+    parser.add_argument("--listing-plus-days", type=int, default=None)
     parser.add_argument("--by-region", action="store_true")
     parser.add_argument("--region-city-bubble-out", default="scripts/reports/region_city_bubbles.html")
+    parser.add_argument("--region-city-bubble-days", type=int, default=12)
+    parser.add_argument("--with-city-rank", action="store_true")
     parser.add_argument("--city-topn", type=int, default=10)
     parser.add_argument("--city-total-topn", type=int, default=10)
     parser.add_argument("--series-city-scatter-out", default="")
@@ -342,7 +364,11 @@ def main() -> None:
     series_logic = business_def.get("series_group_logic") or {}
     product_type_logic = business_def.get("product_type_logic") or {}
 
-    listing_plus_days = _calc_listing_plus_days(time_periods, default_days=4)
+    listing_plus_days = (
+        int(args.listing_plus_days)
+        if args.listing_plus_days is not None and int(args.listing_plus_days) > 0
+        else _calc_listing_plus_days(time_periods, default_days=4)
+    )
 
     for k in ["CM2", "LS8", "LS9"]:
         if k not in time_periods:
@@ -388,13 +414,18 @@ def main() -> None:
         df[c] = pd.to_datetime(df[c], errors="coerce")
     df["order_create_date"] = df["order_create_date"].dt.normalize()
     df["store_city"] = df["store_city"].astype("string").str.strip().fillna("未知")
+    df["store_city_norm"] = _normalize_city_series(df["store_city"])
     df["store_open_date"] = df.groupby("store_name", dropna=False)["store_create_date"].transform("min")
 
     parent_region_map = {} if region_path is None else _load_parent_region_map(Path(region_path))
     if parent_region_map:
-        df["parent_region_name"] = df["store_city"].map(parent_region_map).fillna("未知")
+        df["parent_region_name"] = (
+            df["store_city"].map(parent_region_map).fillna(df["store_city_norm"].map(parent_region_map)).fillna("未知")
+        )
     else:
         df["parent_region_name"] = "未知"
+
+    df["store_city"] = _canonical_city_series(df["store_city"])
 
     lock_label = f"上市后{listing_plus_days}天锁单数"
     headers = [
@@ -509,7 +540,7 @@ def main() -> None:
             )
 
             def _bubble_for_group(group: str):
-                bubble_days = 6
+                bubble_days = max(1, int(args.region_city_bubble_days or 12))
                 spec = next((x for x in group_specs if x["name"] == group), None)
                 if spec is None:
                     return None
@@ -754,139 +785,140 @@ def main() -> None:
     print_table("新门店")
     print_table("老门店")
 
-    topn = max(1, int(args.city_topn or 10))
-    city_headers = ["城市", "锁单数(全车系)", "在营门店数", "店均锁单数", "本车系锁单占比"]
+    if args.with_city_rank:
+        topn = max(1, int(args.city_topn or 10))
+        city_headers = ["城市", "锁单数(全车系)", "在营门店数", "店均锁单数", "本车系锁单占比"]
 
-    def print_city_top10(spec: dict[str, object]) -> None:
-        group = str(spec["name"])
-        tp = time_periods[str(spec["base"])]
-        listing_day = pd.Timestamp(str(tp["end"])).normalize()
-        end_excl = listing_day + pd.Timedelta(days=int(listing_plus_days))
+        def print_city_top10(spec: dict[str, object]) -> None:
+            group = str(spec["name"])
+            tp = time_periods[str(spec["base"])]
+            listing_day = pd.Timestamp(str(tp["end"])).normalize()
+            end_excl = listing_day + pd.Timedelta(days=int(listing_plus_days))
 
-        m_group = _parse_sql_condition(df, str(spec["logic"])).fillna(False)
-        locks_by_city = _calc_lock_counts_by_city(df, listing_day, end_excl)
-        group_locks_by_city = _calc_lock_counts_by_city(df[m_group].copy(), listing_day, end_excl)
-        active_by_city = _calc_active_store_counts_by_city(df, listing_day)
-        city = (
-            pd.DataFrame(
-                {
-                    "锁单数(全车系)": locks_by_city,
-                    "本车系锁单数": group_locks_by_city,
-                    "在营门店数": active_by_city,
-                }
+            m_group = _parse_sql_condition(df, str(spec["logic"])).fillna(False)
+            locks_by_city = _calc_lock_counts_by_city(df, listing_day, end_excl)
+            group_locks_by_city = _calc_lock_counts_by_city(df[m_group].copy(), listing_day, end_excl)
+            active_by_city = _calc_active_store_counts_by_city(df, listing_day)
+            city = (
+                pd.DataFrame(
+                    {
+                        "锁单数(全车系)": locks_by_city,
+                        "本车系锁单数": group_locks_by_city,
+                        "在营门店数": active_by_city,
+                    }
+                )
+                .fillna(0)
+                .astype({"锁单数(全车系)": "int64", "本车系锁单数": "int64", "在营门店数": "int64"})
             )
-            .fillna(0)
-            .astype({"锁单数(全车系)": "int64", "本车系锁单数": "int64", "在营门店数": "int64"})
-        )
-        city = city[city["在营门店数"] > 0].copy()
-        if city.empty:
-            return
-        city["店均锁单数"] = (city["锁单数(全车系)"] / city["在营门店数"]).round(2)
-        city["本车系锁单占比"] = (
-            (city["本车系锁单数"] / city["锁单数(全车系)"]).where(city["锁单数(全车系)"] > 0, 0.0) * 100.0
-        ).round(1)
-        city = city.sort_values(["店均锁单数", "锁单数(全车系)"], ascending=[False, False]).head(topn)
+            city = city[city["在营门店数"] > 0].copy()
+            if city.empty:
+                return
+            city["店均锁单数"] = (city["锁单数(全车系)"] / city["在营门店数"]).round(2)
+            city["本车系锁单占比"] = (
+                (city["本车系锁单数"] / city["锁单数(全车系)"]).where(city["锁单数(全车系)"] > 0, 0.0) * 100.0
+            ).round(1)
+            city = city.sort_values(["店均锁单数", "锁单数(全车系)"], ascending=[False, False]).head(topn)
 
-        rows = []
-        for city_name, row in city.iterrows():
-            rows.append(
-                [
-                    str(city_name),
-                    _fmt(int(row["锁单数(全车系)"])),
-                    _fmt(int(row["在营门店数"])),
-                    _fmt(float(row["店均锁单数"])),
-                    f'{float(row["本车系锁单占比"]):.1f}%',
-                ]
+            rows = []
+            for city_name, row in city.iterrows():
+                rows.append(
+                    [
+                        str(city_name),
+                        _fmt(int(row["锁单数(全车系)"])),
+                        _fmt(int(row["在营门店数"])),
+                        _fmt(float(row["店均锁单数"])),
+                        f'{float(row["本车系锁单占比"]):.1f}%',
+                    ]
+                )
+
+            col_widths = [len(h) for h in city_headers]
+            for r in rows:
+                for i, cell in enumerate(r):
+                    col_widths[i] = max(col_widths[i], len(str(cell)))
+
+            def fmt_row(r: list[str]) -> str:
+                return " | ".join(
+                    str(c).rjust(col_widths[i]) if i else str(c).ljust(col_widths[i])
+                    for i, c in enumerate(r)
+                )
+
+            print()
+            print(f"{group} 上市后{listing_plus_days}天 店均锁单 TOP{topn} 城市")
+            print(fmt_row(city_headers))
+            print("-+-".join("-" * w for w in col_widths))
+            for r in rows:
+                print(fmt_row(r))
+
+        for spec in group_specs:
+            print_city_top10(spec)
+
+        total_topn = max(1, int(args.city_total_topn or 10))
+        total_headers = ["城市", "本车系锁单数", "锁单数(全车系)", "本车系锁单占比", "在营门店数", "本车系店均锁单"]
+
+        def print_city_total_top(spec: dict[str, object]) -> None:
+            group = str(spec["name"])
+            tp = time_periods[str(spec["base"])]
+            listing_day = pd.Timestamp(str(tp["end"])).normalize()
+            end_excl = listing_day + pd.Timedelta(days=int(listing_plus_days))
+
+            m_group = _parse_sql_condition(df, str(spec["logic"])).fillna(False)
+            locks_by_city = _calc_lock_counts_by_city(df, listing_day, end_excl)
+            group_locks_by_city = _calc_lock_counts_by_city(df[m_group].copy(), listing_day, end_excl)
+            active_by_city = _calc_active_store_counts_by_city(df, listing_day)
+
+            city = (
+                pd.DataFrame(
+                    {
+                        "本车系锁单数": group_locks_by_city,
+                        "锁单数(全车系)": locks_by_city,
+                        "在营门店数": active_by_city,
+                    }
+                )
+                .fillna(0)
+                .astype({"本车系锁单数": "int64", "锁单数(全车系)": "int64", "在营门店数": "int64"})
             )
+            city = city[(city["在营门店数"] > 0) & (city["本车系锁单数"] > 0)].copy()
+            if city.empty:
+                return
+            city["本车系锁单占比"] = (
+                (city["本车系锁单数"] / city["锁单数(全车系)"]).where(city["锁单数(全车系)"] > 0, 0.0) * 100.0
+            ).round(1)
+            city["本车系店均锁单"] = (city["本车系锁单数"] / city["在营门店数"]).round(2)
+            city = city.sort_values(["本车系锁单数", "本车系锁单占比"], ascending=[False, False]).head(total_topn)
 
-        col_widths = [len(h) for h in city_headers]
-        for r in rows:
-            for i, cell in enumerate(r):
-                col_widths[i] = max(col_widths[i], len(str(cell)))
+            rows = []
+            for city_name, row in city.iterrows():
+                rows.append(
+                    [
+                        str(city_name),
+                        _fmt(int(row["本车系锁单数"])),
+                        _fmt(int(row["锁单数(全车系)"])),
+                        f'{float(row["本车系锁单占比"]):.1f}%',
+                        _fmt(int(row["在营门店数"])),
+                        _fmt(float(row["本车系店均锁单"])),
+                    ]
+                )
 
-        def fmt_row(r: list[str]) -> str:
-            return " | ".join(
-                str(c).rjust(col_widths[i]) if i else str(c).ljust(col_widths[i])
-                for i, c in enumerate(r)
-            )
+            col_widths = [len(h) for h in total_headers]
+            for r in rows:
+                for i, cell in enumerate(r):
+                    col_widths[i] = max(col_widths[i], len(str(cell)))
 
-        print()
-        print(f"{group} 上市后{listing_plus_days}天 店均锁单 TOP{topn} 城市")
-        print(fmt_row(city_headers))
-        print("-+-".join("-" * w for w in col_widths))
-        for r in rows:
-            print(fmt_row(r))
+            def fmt_row(r: list[str]) -> str:
+                return " | ".join(
+                    str(c).rjust(col_widths[i]) if i else str(c).ljust(col_widths[i])
+                    for i, c in enumerate(r)
+                )
 
-    for spec in group_specs:
-        print_city_top10(spec)
+            print()
+            print(f"{group} 上市后{listing_plus_days}天 本车系锁单总数 TOP{total_topn} 城市")
+            print(fmt_row(total_headers))
+            print("-+-".join("-" * w for w in col_widths))
+            for r in rows:
+                print(fmt_row(r))
 
-    total_topn = max(1, int(args.city_total_topn or 10))
-    total_headers = ["城市", "本车系锁单数", "锁单数(全车系)", "本车系锁单占比", "在营门店数", "本车系店均锁单"]
-
-    def print_city_total_top(spec: dict[str, object]) -> None:
-        group = str(spec["name"])
-        tp = time_periods[str(spec["base"])]
-        listing_day = pd.Timestamp(str(tp["end"])).normalize()
-        end_excl = listing_day + pd.Timedelta(days=int(listing_plus_days))
-
-        m_group = _parse_sql_condition(df, str(spec["logic"])).fillna(False)
-        locks_by_city = _calc_lock_counts_by_city(df, listing_day, end_excl)
-        group_locks_by_city = _calc_lock_counts_by_city(df[m_group].copy(), listing_day, end_excl)
-        active_by_city = _calc_active_store_counts_by_city(df, listing_day)
-
-        city = (
-            pd.DataFrame(
-                {
-                    "本车系锁单数": group_locks_by_city,
-                    "锁单数(全车系)": locks_by_city,
-                    "在营门店数": active_by_city,
-                }
-            )
-            .fillna(0)
-            .astype({"本车系锁单数": "int64", "锁单数(全车系)": "int64", "在营门店数": "int64"})
-        )
-        city = city[(city["在营门店数"] > 0) & (city["本车系锁单数"] > 0)].copy()
-        if city.empty:
-            return
-        city["本车系锁单占比"] = (
-            (city["本车系锁单数"] / city["锁单数(全车系)"]).where(city["锁单数(全车系)"] > 0, 0.0) * 100.0
-        ).round(1)
-        city["本车系店均锁单"] = (city["本车系锁单数"] / city["在营门店数"]).round(2)
-        city = city.sort_values(["本车系锁单数", "本车系锁单占比"], ascending=[False, False]).head(total_topn)
-
-        rows = []
-        for city_name, row in city.iterrows():
-            rows.append(
-                [
-                    str(city_name),
-                    _fmt(int(row["本车系锁单数"])),
-                    _fmt(int(row["锁单数(全车系)"])),
-                    f'{float(row["本车系锁单占比"]):.1f}%',
-                    _fmt(int(row["在营门店数"])),
-                    _fmt(float(row["本车系店均锁单"])),
-                ]
-            )
-
-        col_widths = [len(h) for h in total_headers]
-        for r in rows:
-            for i, cell in enumerate(r):
-                col_widths[i] = max(col_widths[i], len(str(cell)))
-
-        def fmt_row(r: list[str]) -> str:
-            return " | ".join(
-                str(c).rjust(col_widths[i]) if i else str(c).ljust(col_widths[i])
-                for i, c in enumerate(r)
-            )
-
-        print()
-        print(f"{group} 上市后{listing_plus_days}天 本车系锁单总数 TOP{total_topn} 城市")
-        print(fmt_row(total_headers))
-        print("-+-".join("-" * w for w in col_widths))
-        for r in rows:
-            print(fmt_row(r))
-
-    for spec in group_specs:
-        print_city_total_top(spec)
+        for spec in group_specs:
+            print_city_total_top(spec)
 
     if str(args.series_city_scatter_out or "").strip():
         import plotly.graph_objects as go
