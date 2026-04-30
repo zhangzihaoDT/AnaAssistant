@@ -3,6 +3,7 @@ venv/
 __pycache__/
 .env
 .DS_Store
+.xhs_profile/
 out/**
 !out/**/
 !out/*.md
